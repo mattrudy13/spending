@@ -1,0 +1,548 @@
+// Pure logic for the spending page: CSV reading, bank formats, merchant names,
+// categories, monthly totals and recurring charges. No DOM here, so the Node
+// tests in tests/ can import it directly.
+//
+// Money is kept in integer cents. Adding up floats like 0.1 + 0.2 drifts, and a
+// year of transactions would show it.
+// "out" is the transaction amount from Rudy's side: positive = money left,
+// negative = money came back (refund, payment received, paycheck).
+
+export const DEFAULT_CATEGORIES = [
+  { id: "housing", name: "Housing" },
+  { id: "bills", name: "Bills & utilities" },
+  { id: "groceries", name: "Groceries" },
+  { id: "dining", name: "Dining" },
+  { id: "car", name: "Gas & car" },
+  { id: "shopping", name: "Shopping" },
+  { id: "subs", name: "Subscriptions" },
+  { id: "health", name: "Health" },
+  { id: "travel", name: "Travel" },
+  { id: "fun", name: "Fun" },
+  { id: "gifts", name: "Gifts & giving" },
+  { id: "other", name: "Other" },
+];
+
+// Pseudo-category for rows that aren't spending (card payments, transfers,
+// paychecks). Picking it in the app teaches a rule like any other category.
+export const NOT_SPENDING = "none";
+
+// ---------------------------------------------------------------- CSV
+
+export function parseCsv(text) {
+  text = text.replace(/^﻿/, "");
+  const rows = [];
+  let row = [], field = "", quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quoted) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; } else quoted = false;
+      } else field += c;
+    } else if (c === '"') quoted = true;
+    else if (c === ",") { row.push(field); field = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(field); rows.push(row); row = []; field = "";
+    } else field += c;
+  }
+  if (field !== "" || row.length) { row.push(field); rows.push(row); }
+  return rows.filter((r) => r.some((f) => f.trim() !== ""));
+}
+
+const pad = (n) => String(n).padStart(2, "0");
+
+export function parseDate(s) {
+  s = String(s ?? "").trim();
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return isoDate(+m[1], +m[2], +m[3]);
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4}|\d{2})\b/);
+  if (m) return isoDate(m[3].length === 2 ? 2000 + +m[3] : +m[3], +m[1], +m[2]);
+  return null;
+}
+
+function isoDate(y, mo, d) {
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  return `${y}-${pad(mo)}-${pad(d)}`;
+}
+
+// "$1,234.56", "-12.30", "(12.30)" and "+5" all work. Returns cents or null.
+export function parseAmount(s) {
+  s = String(s ?? "").trim();
+  if (!s) return null;
+  let neg = false;
+  if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
+  s = s.replace(/[$,\s]/g, "");
+  if (s.startsWith("-")) { neg = !neg; s = s.slice(1); }
+  else if (s.startsWith("+")) s = s.slice(1);
+  if (s.endsWith("-")) { neg = !neg; s = s.slice(0, -1); }
+  if (!/^(\d+\.?\d*|\.\d+)$/.test(s)) return null;
+  const cents = Math.round(parseFloat(s) * 100);
+  return neg ? -cents : cents;
+}
+
+// ---------------------------------------------------------------- formats
+
+// Some banks put account info above the header, and a few send no header at
+// all. The header is the first row with 3+ filled cells whose next row has a
+// date in it; if row 0 already holds a date, the file has no header.
+export function splitHeader(rows) {
+  const hasDate = (r) => r && r.some((f) => parseDate(f));
+  if (hasDate(rows[0]) && rows[0].some((f) => parseAmount(f) != null && !parseDate(f))) {
+    return { headers: rows[0].map((_, i) => `Column ${i + 1}`), body: rows };
+  }
+  for (let i = 0; i < Math.min(rows.length - 1, 15); i++) {
+    if (rows[i].filter((f) => f.trim()).length >= 3 && hasDate(rows[i + 1])) {
+      return { headers: rows[i].map((h) => h.trim()), body: rows.slice(i + 1) };
+    }
+  }
+  return { headers: (rows[0] || []).map((h) => h.trim()), body: rows.slice(1) };
+}
+
+export function headerSignature(headers) {
+  return headers.map((h) => h.toLowerCase().replace(/\s+/g, " ").trim()).join("|");
+}
+
+// Known layouts. Each returns a mapping: column indexes plus how to read the sign.
+export function detectFormat(headers) {
+  const h = headers.map((x) => x.toLowerCase().trim());
+  const at = (name) => h.indexOf(name);
+  const has = (...names) => names.every((n) => h.includes(n));
+
+  // Chase credit card: Transaction Date, Post Date, Description, Category, Type, Amount, Memo.
+  // Charges are negative.
+  if (has("transaction date", "post date", "description", "amount", "type")) {
+    return { format: "chase-card", account: "Chase card", accountType: "card",
+      date: at("transaction date"), desc: at("description"), amount: at("amount"),
+      sign: "negative", category: at("category"), type: at("type") };
+  }
+  // Chase checking: Details, Posting Date, Description, Amount, Type, Balance, Check or Slip #.
+  if (has("details", "posting date", "description", "amount")) {
+    return { format: "chase-checking", account: "Chase checking", accountType: "bank",
+      date: at("posting date"), desc: at("description"), amount: at("amount"),
+      sign: "negative", category: -1, type: at("type") };
+  }
+  // Amex: Date, Description, [Card Member, Account #,] Amount, plus extra columns
+  // (Extended Details, Category, ...) in the detailed download. Charges are positive.
+  if (has("date", "description", "amount") &&
+      (h.includes("card member") || h.includes("extended details") || h.includes("appears on your statement as"))) {
+    return { format: "amex", account: "Amex", accountType: "card",
+      date: at("date"), desc: at("description"), amount: at("amount"),
+      sign: "positive", category: at("category"), type: -1 };
+  }
+  return null;
+}
+
+// Best guesses for the "which column is which" form on an unknown file.
+export function guessMapping(headers, body) {
+  const h = headers.map((x) => x.toLowerCase());
+  const find = (re, not) => h.findIndex((x) => re.test(x) && !(not && not.test(x)));
+  let date = find(/date/, /post/);
+  if (date < 0) date = find(/date/);
+  if (date < 0) date = headers.findIndex((_, i) => body.slice(0, 5).every((r) => parseDate(r[i])));
+  let desc = find(/desc|payee|merchant|memo|name|details/);
+  if (desc < 0) desc = longestTextColumn(body, date);
+  const amount = find(/amount/);
+  const debit = find(/debit|withdraw/);
+  const credit = find(/credit|deposit/, /card/);
+  const mode = amount < 0 && debit >= 0 && credit >= 0 ? "split" : "single";
+  const amtCol = amount >= 0 ? amount
+    : headers.findIndex((_, i) => i !== date && body.slice(0, 5).every((r) => parseAmount(r[i]) != null));
+  let neg = 0, posi = 0;
+  for (const r of body) { const v = parseAmount(r[amtCol]); if (v < 0) neg++; else if (v > 0) posi++; }
+  return { format: "custom", account: "Checking", accountType: "bank", date, desc,
+    mode, amount: amtCol, debit, credit, sign: neg >= posi ? "negative" : "positive",
+    category: -1, type: -1 };
+}
+
+function longestTextColumn(body, skip) {
+  let best = -1, bestLen = -1;
+  for (let i = 0; i < (body[0] || []).length; i++) {
+    if (i === skip) continue;
+    const len = body.slice(0, 10).reduce((n, r) => n + (parseAmount(r[i]) == null ? (r[i] || "").length : 0), 0);
+    if (len > bestLen) { best = i; bestLen = len; }
+  }
+  return best;
+}
+
+// Rows → transactions. Skips rows without a date or amount (summary lines,
+// pending holds with blank amounts).
+export function readRows(body, map) {
+  const out = [];
+  for (const r of body) {
+    const date = parseDate(r[map.date]);
+    // Keep inner spacing: Amex pads merchant and city with runs of spaces, and
+    // merchantKey uses that gap. The page collapses it for display.
+    const desc = (r[map.desc] || "").trim();
+    let amt;
+    if (map.mode === "split") {
+      const d = parseAmount(r[map.debit]) ?? 0, c = parseAmount(r[map.credit]) ?? 0;
+      if (!d && !c) continue;
+      amt = Math.abs(d) - Math.abs(c);
+    } else {
+      const v = parseAmount(r[map.amount]);
+      if (v == null) continue;
+      amt = map.sign === "negative" ? -v : v;
+    }
+    if (!date || !amt) continue;
+    const issuerCat = map.category >= 0 ? (r[map.category] || "").trim() : "";
+    const type = map.type >= 0 ? (r[map.type] || "").trim() : "";
+    out.push({ account: map.account, date, desc, out: amt, issuerCat,
+      kind: classify({ desc, out: amt, type }, map.accountType) });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- what counts
+
+// Paying a card from checking shows up twice (once in each file). Counting
+// both would double the month, so card payments and own-account transfers are
+// left out, and so is money coming in to checking.
+// On the checking side, only payments to a card issuer count: "FIBER INTERNET
+// AUTOPAY" is a real bill, so a bare "autopay" isn't enough there.
+const PAYMENT_TO_CARD = new RegExp([
+  "credit crd", "crd epay", "card ?member serv", "american express.{0,20}(ach|pmt|payment)",
+  "amex.{0,20}(ach|pmt|payment)", "chase.{0,20}(card|crd).{0,20}(pmt|payment|autopay)",
+  "capital one.{0,20}(pmt|payment)", "discover.{0,20}(pmt|payment)", "citi.{0,20}(pmt|payment)",
+].join("|"), "i");
+// On the card side, a credit with any payment wording is the bill being paid.
+const PAYMENT_ON_CARD = /payment.{0,20}thank you|autopay|auto pay|automatic payment|online payment|mobile payment|payment received|epayment/i;
+const TRANSFER = /\btransfer\b|\bxfer\b|\bto (savings|checking)\b|\bfrom (savings|checking)\b/i;
+
+export function classify({ desc, out, type }, accountType) {
+  const t = (type || "").toLowerCase();
+  if (accountType === "card") {
+    if (out < 0 && (t === "payment" || PAYMENT_ON_CARD.test(desc) || PAYMENT_TO_CARD.test(desc))) return "payment";
+    return out > 0 ? "spend" : "refund";
+  }
+  if (out > 0) return PAYMENT_TO_CARD.test(desc) || TRANSFER.test(desc) ? "transfer" : "spend";
+  return TRANSFER.test(desc) ? "transfer" : "income";
+}
+
+// ---------------------------------------------------------------- merchants
+
+const BANK_PREFIX = /^(POS PURCHASE|POS DEBIT|POS|DEBIT CARD PURCHASE|DEBIT PURCHASE|VISA PURCHASE|CHECKCARD|CHECK CARD|DBT CRD|PURCHASE AUTHORIZED ON|RECURRING PAYMENT AUTHORIZED ON|RECURRING PAYMENT|PREAUTHORIZED DEBIT|ACH DEBIT|ACH WITHDRAWAL|ACH)\b\s*/;
+const PROCESSOR = /^(SQ|TST|SP|PY|PP|PAYPAL|DD|IC|GOOGLE|GGL|FS|BT|CKE|LS|EB)\s?\*\s*/;
+const ALIASES = [
+  [/^(AMAZON PRIME|PRIME VIDEO)/, "AMAZON PRIME"],
+  [/^(AMZN|AMAZON)/, "AMAZON"],
+  [/^APPLE\.?COM\/?BILL|^APPLE COM BILL/, "APPLE.COM/BILL"],
+  [/^UBER\s*\*?\s*EATS|^UBEREATS/, "UBER EATS"],
+  [/^UBER\b/, "UBER"],
+  [/^LYFT\b/, "LYFT"],
+  [/^NETFLIX/, "NETFLIX"],
+  [/^SPOTIFY/, "SPOTIFY"],
+  [/^HULU/, "HULU"],
+  [/^DISNEY ?(PLUS|\+)/, "DISNEY PLUS"],
+  [/^(HBO ?MAX|MAX\.COM)/, "MAX"],
+  [/^(GOOGLE \*?)?YOUTUBE/, "YOUTUBE"],
+  [/^DOORDASH/, "DOORDASH"],
+  [/^(WAL-?MART|WM SUPERCENTER)/, "WALMART"],
+  [/^(WHOLEFDS|WHOLE FOODS)/, "WHOLE FOODS"],
+  [/^TARGET\b/, "TARGET"],
+  [/^COSTCO/, "COSTCO"],
+  [/^STARBUCKS/, "STARBUCKS"],
+  [/^CHICK-FIL-A/, "CHICK-FIL-A"],
+  [/^MCDONALD/, "MCDONALD'S"],
+];
+const STATES = new Set("AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY".split(" "));
+
+// The same store shows up as "FRESH MART #0123 SPRINGFIELD IL" one day
+// and "FRESH MART 0456" the next. Rules and recurring checks need one name,
+// so this trims store numbers, cities and payment-processor prefixes.
+export function merchantKey(desc) {
+  let s = String(desc || "").toUpperCase().trim();
+  for (let i = 0; i < 3; i++) {
+    const before = s;
+    s = s.replace(BANK_PREFIX, "").replace(/^([\d/-]+\s+)+/, "").replace(PROCESSOR, "");
+    if (s === before) break;
+  }
+  for (const [re, key] of ALIASES) if (re.test(s)) return key;
+  // Amex pads the merchant and city with runs of spaces.
+  s = s.split(/\s{2,}/)[0].split(/[#*]/)[0];
+  const words = [];
+  for (const w of s.split(/\s+/)) {
+    if (!w) continue;
+    if (/^\d+$/.test(w) || (w.match(/\d/g) || []).length >= 3) break;
+    words.push(w.replace(/[.,;:-]+$/, ""));
+    if (words.length === 3) break;
+  }
+  while (words.length > 1 && STATES.has(words[words.length - 1])) words.pop();
+  const key = words.filter(Boolean).join(" ");
+  return key || String(desc || "").toUpperCase().trim().slice(0, 24) || "UNKNOWN";
+}
+
+const KEEP_UPPER = new Set(["AT&T", "CVS", "TJ", "BP", "AMC", "LLC", "USA", "UPS", "IKEA", "T-MOBILE"]);
+export function displayName(key) {
+  if (key === "APPLE.COM/BILL") return "Apple (App Store/iCloud)";
+  return key.split(" ").map((w) => KEEP_UPPER.has(w) ? w
+    : w.toLowerCase().replace(/(^|[-'/&.])([a-z])/g, (_, p, c) => p + c.toUpperCase())).join(" ");
+}
+
+// ---------------------------------------------------------------- categories
+
+// Starter rules: national chains only, so the public code says nothing about
+// where Rudy lives or shops. His own fixes are saved in his browser instead.
+const STARTER = [
+  [/^(NETFLIX|SPOTIFY|HULU|DISNEY PLUS|MAX|PEACOCK|PARAMOUNT|YOUTUBE|APPLE\.COM\/BILL|AUDIBLE|PATREON|AMAZON PRIME|SIRIUSXM|NYTIMES|ICLOUD|GOOGLE ONE|OPENAI|CHATGPT)\b/, "subs"],
+  [/^(UBER EATS|DOORDASH|GRUBHUB|STARBUCKS|DUNKIN|CHICK-FIL-A|MCDONALD'S|CHIPOTLE|TACO BELL|WENDY'?S|PANERA|SUBWAY|DOMINO'?S|PIZZA HUT|PAPA JOHN'?S|FIVE GUYS|SHAKE SHACK|SWEETGREEN|PANDA EXPRESS)\b/, "dining"],
+  [/^(SHELL|EXXON|EXXONMOBIL|MOBIL|CHEVRON|BP|SUNOCO|CITGO|MARATHON|VALERO|SPEEDWAY|CIRCLE K|RACETRAC|QUIKTRIP|JIFFY LUBE|AUTOZONE|ADVANCE AUTO|GEICO|PROGRESSIVE)\b/, "car"],
+  [/^(ALDI|TRADER JOE'?S?|WHOLE FOODS|KROGER|SAFEWAY|PUBLIX|INSTACART)\b/, "groceries"],
+  [/^(AMAZON|TARGET|WALMART|COSTCO|HOME DEPOT|LOWE'?S|BEST BUY|IKEA|ETSY|EBAY|TJ MAXX|TJMAXX|MARSHALLS|OLD NAVY|NIKE)\b/, "shopping"],
+  [/^(CVS|WALGREENS|RITE AID|PLANET FITNESS|LA FITNESS)\b/, "health"],
+  [/^(UBER|LYFT|DELTA|AMERICAN AIR|UNITED|SOUTHWEST|JETBLUE|MARRIOTT|HILTON|HYATT|AIRBNB|EXPEDIA|HERTZ|AMTRAK)\b/, "travel"],
+  [/^(TICKETMASTER|STUBHUB|SEATGEEK|AMC|REGAL|STEAM|PLAYSTATION|XBOX|NINTENDO)\b/, "fun"],
+  [/^(VERIZON|AT&T|T-MOBILE|COMCAST|XFINITY|SPECTRUM)\b/, "bills"],
+];
+
+// Words that give a bill away wherever they sit in the name ("RENT PAYMENT
+// PORTAL", "CITY POWER CO"). Checked after the chain list above.
+const STARTER_WORDS = [
+  [/\b(RENT|APARTMENTS?|PROPERTY MGMT|PROPERTY MANAGEMENT|LEASING|RENTERS INS)\b/, "housing"],
+  [/\b(POWER|ENERGY|ELECTRIC|WATER|SEWER|UTILITY|UTILITIES|INTERNET|BROADBAND|WIRELESS)\b/, "bills"],
+];
+
+export function starterCategory(key) {
+  for (const [re, cat] of STARTER) if (re.test(key)) return cat;
+  for (const [re, cat] of STARTER_WORDS) if (re.test(key)) return cat;
+  return null;
+}
+
+// Chase ("Food & Drink") and Amex ("Restaurant-Bar & Café") name categories
+// differently. Order matters: Amex's "Merchandise & Supplies-Groceries" has to
+// hit groceries before the general merchandise line catches it.
+const ISSUER = [
+  [/grocer|supermarket/, "groceries"],
+  [/pharmac|health|medical|dental|vision|doctor|fitness/, "health"],
+  [/restaurant|food & drink|dining|fast food|coffee|bar & caf/, "dining"],
+  [/fuel|^gas$|gas station|automotive|parking|toll|auto (service|repair|parts)/, "car"],
+  [/airline|lodging|hotel|travel|car rental|cruise|taxi|rideshare/, "travel"],
+  [/utilit|bills|communication|cable|internet|wireless|telephone/, "bills"],
+  [/entertainment|recreation|theat|movie|music|ticket|sporting/, "fun"],
+  [/gift|donation|charit/, "gifts"],
+  [/merchandise|shopping|^home$|personal|clothing|department|retail|electronics|wholesale/, "shopping"],
+];
+
+export function issuerCategory(raw) {
+  const s = String(raw || "").toLowerCase().trim();
+  if (!s) return null;
+  for (const [re, cat] of ISSUER) if (re.test(s)) return cat;
+  return null;
+}
+
+// Which category a transaction lands in, and whether Rudy chose it himself.
+// Order: a fix on this one row, his rule for the merchant, the starter list,
+// the bank's own category, then Other.
+export function categorize(tx, key, db) {
+  const own = db.overrides?.[tx.id] ?? db.rules?.[key];
+  if (own && (own === NOT_SPENDING || db.categories.some((c) => c.id === own))) return { cat: own, mine: true };
+  if (tx.kind === "payment" || tx.kind === "transfer" || tx.kind === "income") return { cat: NOT_SPENDING, mine: false };
+  const cat = starterCategory(key) ?? issuerCategory(tx.issuerCat) ?? "other";
+  return { cat: db.categories.some((c) => c.id === cat) ? cat : "other", mine: false };
+}
+
+// ---------------------------------------------------------------- months
+
+export const monthOf = (date) => date.slice(0, 7);
+
+export function addMonths(month, n) {
+  const [y, m] = month.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + n, 1));
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}`;
+}
+
+export function monthRange(first, last) {
+  const out = [];
+  for (let m = first; m <= last; m = addMonths(m, 1)) out.push(m);
+  return out;
+}
+
+export function daysBetween(a, b) {
+  return Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
+}
+
+const lastDayOf = (month) => {
+  const [y, m] = month.split("-").map(Number);
+  return `${month}-${pad(new Date(Date.UTC(y, m, 0)).getUTCDate())}`;
+};
+
+export function median(values) {
+  if (!values.length) return null;
+  const s = [...values].sort((a, b) => a - b), mid = s.length >> 1;
+  return s.length % 2 ? s[mid] : Math.round((s[mid - 1] + s[mid]) / 2);
+}
+
+// Each account's first and last date.
+export function accountRanges(txs) {
+  const r = {};
+  for (const t of txs) {
+    const a = (r[t.account] ??= { first: t.date, last: t.date, count: 0 });
+    if (t.date < a.first) a.first = t.date;
+    if (t.date > a.last) a.last = t.date;
+    a.count++;
+  }
+  return r;
+}
+
+// A month only counts toward "usual" if every account's file covers all of it.
+// Otherwise a month missing the checking file (rent!) would look cheap and drag
+// the usual down. Small slack because the first charge is rarely on the 1st.
+export function isFullMonth(month, ranges) {
+  const accts = Object.values(ranges);
+  if (!accts.length) return false;
+  return accts.every((a) =>
+    daysBetween(a.first, `${month}-01`) >= -6 && daysBetween(lastDayOf(month), a.last) >= -3);
+}
+
+// Everything the month views need, in one pass over the transactions.
+export function buildStats(db) {
+  const rows = [];
+  for (const tx of db.txs) {
+    const key = merchantKey(tx.desc);
+    const { cat, mine } = categorize(tx, key, db);
+    rows.push({ tx, key, cat, mine, month: monthOf(tx.date) });
+  }
+  const spend = rows.filter((r) => r.cat !== NOT_SPENDING);
+  const ranges = accountRanges(db.txs);
+  const byMonth = new Map(); // month → { total, cats: Map(cat → cents) }
+  for (const r of spend) {
+    const m = byMonth.get(r.month) ?? { total: 0, cats: new Map() };
+    m.total += r.tx.out;
+    m.cats.set(r.cat, (m.cats.get(r.cat) ?? 0) + r.tx.out);
+    byMonth.set(r.month, m);
+  }
+  const all = rows.map((r) => r.month).sort();
+  const months = all.length ? monthRange(all[0], all[all.length - 1]) : [];
+  const full = new Set(months.filter((m) => isFullMonth(m, ranges)));
+  return { rows, spend, ranges, byMonth, months, full };
+}
+
+// "Usual" = median of the last 6 full months before this one. Median, not
+// average, so one vacation month doesn't make every normal month look cheap.
+// The total's usual is the median of monthly totals, so it won't equal the sum
+// of the category medians.
+export const USUAL_MONTHS = 6;
+export const MIN_USUAL_MONTHS = 3;
+
+export function usualFor(stats, month, cat = null) {
+  const prior = stats.months.filter((m) => m < month && stats.full.has(m)).slice(-USUAL_MONTHS);
+  if (prior.length < MIN_USUAL_MONTHS) return null;
+  return median(prior.map((m) => {
+    const b = stats.byMonth.get(m);
+    if (!b) return 0;
+    return cat ? b.cats.get(cat) ?? 0 : b.total;
+  }));
+}
+
+// ---------------------------------------------------------------- recurring
+
+const close = (a, b) => Math.abs(a - b) <= Math.max(10, Math.abs(b) * 0.01);
+const fits = (gap, period) => period === "monthly" ? gap >= 20 && gap <= 40
+  : period === "yearly" ? gap >= 330 && gap <= 400
+  : (gap >= 20 && gap <= 40) || (gap >= 330 && gap <= 400);
+const periodOf = (gap) => (gap <= 40 ? "monthly" : "yearly");
+
+// A subscription is the same merchant charging the same amount about every
+// month (or year). Price changes are joined back on: if Netflix's $15.49
+// charges stop and $17.99 charges start one cycle later, that's one series.
+// charges: [{ key, date, amt, account }] with amt > 0. accountEnd: account → last date.
+export function findRecurring(charges, accountEnd) {
+  const byKey = new Map();
+  for (const c of [...charges].sort((a, b) => a.date.localeCompare(b.date))) {
+    if (!byKey.has(c.key)) byKey.set(c.key, []);
+    byKey.get(c.key).push(c);
+  }
+  const found = [];
+  for (const [key, list] of byKey) {
+    // 1. Same-amount chains.
+    const chains = [];
+    for (const c of list) {
+      const chain = chains.find((ch) => {
+        const last = ch.items[ch.items.length - 1];
+        return close(c.amt, last.amt) && fits(daysBetween(last.date, c.date), ch.period);
+      });
+      if (chain) {
+        chain.period ??= periodOf(daysBetween(chain.items[chain.items.length - 1].date, c.date));
+        chain.items.push(c);
+      } else chains.push({ items: [c], period: null, changes: [] });
+    }
+    // 2. Join price changes: an established chain (3+ charges) ends, a chain at a different
+    // price (within ±50%) starts one cycle later.
+    chains.sort((a, b) => a.items[0].date.localeCompare(b.items[0].date));
+    for (let i = 0; i < chains.length; i++) {
+      const a = chains[i];
+      if (!a || a.items.length < 3 || !a.period) continue;
+      for (let j = i + 1; j < chains.length; j++) {
+        const b = chains[j];
+        if (!b || (b.period && b.period !== a.period)) continue;
+        const aLast = a.items[a.items.length - 1], bFirst = b.items[0];
+        const ratio = bFirst.amt / aLast.amt;
+        if (fits(daysBetween(aLast.date, bFirst.date), a.period) && ratio >= 0.5 && ratio <= 1.5) {
+          a.changes.push({ date: bFirst.date, from: aLast.amt, to: bFirst.amt }, ...b.changes);
+          a.items.push(...b.items);
+          chains[j] = null;
+          j = i; // a's last item moved; look again for the next change
+        }
+      }
+    }
+    for (const ch of chains) {
+      if (!ch || !ch.period) continue;
+      const { items, period } = ch;
+      const first = items[0], last = items[items.length - 1];
+      // A store visited every week will now and then hit nearly the same total
+      // a month apart. So the series has to be most of what that merchant
+      // charged over its span, unless every charge is the exact same amount
+      // (Apple bills several subscriptions under one name).
+      const exact = items.every((x) => x.amt === first.amt);
+      const inSpan = list.filter((x) => x.date >= first.date && x.date <= last.date).length;
+      if (!exact && items.length / inSpan < 0.6) continue;
+      if (period === "monthly" && items.length < 3 && !(items.length === 2 && exact)) continue;
+      if (period === "yearly" && !exact && items.length < 3) continue;
+      const end = accountEnd[last.account] ?? last.date;
+      const cycle = period === "monthly" ? 30 : 365;
+      const stopped = daysBetween(last.date, end) > cycle + (period === "monthly" ? 12 : 30);
+      const change = ch.changes[ch.changes.length - 1] ?? null;
+      found.push({
+        key, period, amount: last.amt, first: first.date, last: last.date, count: items.length,
+        status: stopped ? "stopped" : "active",
+        isNew: !stopped && daysBetween(first.date, end) <= (period === "monthly" ? 75 : 400) && !ch.changes.length,
+        change: change && daysBetween(change.date, end) <= 100 ? change : null,
+        next: stopped ? null : addDays(last.date, period === "monthly" ? 30 : 365),
+        perMonth: period === "monthly" ? last.amt : Math.round(last.amt / 12),
+      });
+    }
+  }
+  return found.sort((a, b) => b.perMonth - a.perMonth);
+}
+
+export function addDays(date, n) {
+  const d = new Date(Date.parse(date) + n * 86400000);
+  return d.toISOString().slice(0, 10);
+}
+
+// ---------------------------------------------------------------- importing
+
+// FNV-1a: a short, stable id for a transaction (not for security).
+function hash(s) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(36);
+}
+
+// Loading an overlapping export again shouldn't double anything, but two real
+// $5 coffees at the same shop on the same day must both stay. So rows are
+// counted per (account, date, amount, description): if the saved data has 2 and
+// the new file has 3, only 1 is added.
+export function mergeTransactions(existing, incoming) {
+  const base = (t) => `${t.account}|${t.date}|${t.out}|${t.desc}`;
+  const have = new Map();
+  for (const t of existing) have.set(base(t), (have.get(base(t)) ?? 0) + 1);
+  const seen = new Map(), added = [];
+  let skipped = 0;
+  for (const t of incoming) {
+    const b = base(t), n = (seen.get(b) ?? 0) + 1;
+    seen.set(b, n);
+    if (n <= (have.get(b) ?? 0)) { skipped++; continue; }
+    added.push({ ...t, id: `${hash(b)}-${n}` });
+  }
+  return { txs: existing.concat(added), added: added.length, skipped };
+}

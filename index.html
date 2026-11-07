@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- connect-src 'none' is the privacy promise: the page can't send anything
+     anywhere, even if a bug tried. Fonts are the only outside request. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<title>Ledger</title>
+<meta name="description" content="A private spending page: load bank and card CSV exports, see where the money went. Everything stays on your device.">
+<meta name="theme-color" content="#f6f4ee">
+<meta name="apple-mobile-web-app-title" content="Ledger">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script type="module" src="app.js"></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <a href="#where" class="name">Ledger</a>
+    <span class="meta" id="meta">Saved on this device only</span>
+  </div>
+  <nav class="tabs" aria-label="Views">
+    <a href="#where" data-view="where">Where it went</a>
+    <a href="#recurring" data-view="recurring">Recurring</a>
+    <a href="#trends" data-view="trends">Trends</a>
+  </nav>
+  <a href="#files" class="import-link" data-view="files">Import CSV</a>
+</header>
+<div id="banner"></div>
+<main id="main" tabindex="-1"><p class="loading">Loading…</p></main>
+<noscript><p class="wrap">This page needs JavaScript to read your files.</p></noscript>
+
+<dialog id="fix-dialog" aria-labelledby="fix-title"></dialog>
+<dialog id="map-dialog" aria-labelledby="map-title"></dialog>
+</body>
+</html>

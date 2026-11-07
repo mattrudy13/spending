@@ -1,0 +1,15 @@
+{
+  "name": "Ledger",
+  "short_name": "Ledger",
+  "description": "Where the money went, from bank and card CSV exports. Saved on this device only.",
+  "id": "/spending/",
+  "start_url": "/spending/",
+  "scope": "/spending/",
+  "display": "standalone",
+  "background_color": "#f6f4ee",
+  "theme_color": "#f6f4ee",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

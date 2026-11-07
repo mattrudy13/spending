@@ -1,0 +1,75 @@
+# Ledger (spending): project notes
+
+A private spending page for Rudy: load CSV exports from his bank and cards, see where the money went. Live at
+https://mattrudy13.github.io/spending/ (repo `mattrudy13/spending`, public, GitHub Pages from `main` at the root).
+The page title is "Ledger"; the repo and URL are "spending". Mockups ("Statement" look, A, was picked):
+https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENTS.md`.
+
+## Versions
+
+- **v0.1** (2026-11-07): first build. Where it went, Recurring, Trends, Import and settings; Chase card, Chase
+  checking and Amex layouts plus a "which column is which" form for any other bank; sample data button.
+
+## Rudy's choices (ask before changing)
+
+- **Browser only.** Files are read on the device and saved in that browser's localStorage (`spending:v1`). Laptop and
+  phone keep separate copies. Nothing is uploaded, ever, and there's no server. The page's CSP has
+  `connect-src 'none'`, so even a bug can't send data. Don't add analytics, a backend, sync or any outside request.
+- **No account numbers.** Never read, store or ask for them. Amex's "Account #" column is ignored on purpose.
+- **Public repo, no data in it.** `.gitignore` blocks `*.csv` and other export formats. Test fixtures live inside
+  `tests/lib.test.mjs` as strings, all made up. Starter merchant rules are national chains only: nothing that hints
+  at where Rudy lives or shops. His own rules stay in his browser.
+- **Not linked from Rudy's Board** (hub). Friends see the Board. He uses a Home Screen icon instead.
+- Accounts: checking at a bank he didn't name (the column form handles it), a Chase card and Amex.
+- Views: Where it went (month by category vs usual), recurring charges (price changes, new, stopped), trends over
+  months. **No budgets or targets.**
+- 12 starter categories (renamable, mergeable in the app): Housing, Bills & utilities, Groceries, Dining, Gas & car
+  (car insurance too), Shopping, Subscriptions, Health, Travel, Fun, Gifts & giving, Other.
+- Real files are tested by Rudy at the end of v0.1 (agreed 2026-11-07); the importers were built from the banks'
+  published layouts.
+
+## How it decides things
+
+- **Money is integer cents.** `out` > 0 means money left. Chase card charges are negative in the file, Amex charges
+  are positive: `detectFormat` sets `sign` per layout.
+- **Not spending:** card payments (on the card: type "Payment" or payment wording; on checking: only issuer-specific
+  patterns, so "FIBER INTERNET AUTOPAY" stays a bill), transfers between own accounts, and money coming in to
+  checking. Otherwise a card payment would be counted twice (once from checking, once on the card).
+- **Refunds** (card credits that aren't payments) come off their category.
+- **Category order:** Rudy's fix on that one row → his rule for the merchant → starter list (`STARTER`, then
+  `STARTER_WORDS` like RENT/POWER/INTERNET) → the bank's category (`ISSUER` map) → Other. Changing a charge in the
+  app saves a rule for that merchant by default ("Use this for every X charge").
+- **Merchant key** (`merchantKey`): strips bank prefixes (POS PURCHASE…), processor prefixes (SQ *, TST*), store
+  numbers and cities, Amex's padded city column, and a trailing state code; a few aliases (AMZN → AMAZON).
+- **Usual** = median of the last 6 *full* months before the selected one; needs 3. A month is full only if every
+  account's file covers all of it (6 days slack at the start, 3 at the end), so a missing checking file (rent) can't
+  make a month look cheap. The total's usual is the median of monthly totals, not the sum of category medians.
+  Partial months show "so far" and no more/less verdict.
+- **Re-import** never doubles: rows are counted per (account, date, amount, description), so two real same-day
+  coffees stay and an overlapping file only adds what's new.
+- **Recurring** (`findRecurring`): same merchant, amount within 1% (min 10¢), every 20–40 days (monthly) or
+  330–400 (yearly). Monthly needs 3 charges, or 2 of the exact same amount. A new price one cycle after a 3+ charge
+  series is a price change. The series must be ≥60% of that merchant's charges over its span unless every amount is
+  identical, which keeps weekly grocery trips out. Stopped = no charge for a cycle + 12 days (yearly: + 30) before
+  that account's last date. Variable bills (power) aren't recurring by design.
+- The page opens on the latest month unless the data ends before the 20th, then the month before.
+
+## Files
+
+- `index.html`, `style.css`, `app.js`: the page. Plain JS modules, no build. Views are hash routes (`#where`,
+  `#recurring`, `#trends`, `#files`).
+- `lib.js`: all logic (CSV, layouts, merchants, categories, months, recurring, merging). No DOM; tests import it.
+- `sample.js`: seeded made-up data written as Chase/Amex/checking CSV text and run through the real importer.
+  Importing a real file clears it.
+- `tests/lib.test.mjs`: `npm test` (Node's built-in runner, no packages).
+- `manifest.webmanifest`, `favicon.svg`, `apple-touch-icon.png` (180, full-bleed; iOS rounds it), `icon-192/512.png`:
+  bars-and-tick icon. The PNGs were rendered from the SVG with headless Chrome; redraw them if the SVG changes.
+- `.claude/launch.json`: `python3 -m http.server 8772`. Watch the port-8765 cache trap if previewing from the
+  GitHub folder root (other sites also have `style.css`).
+
+## Checking a change
+
+- `npm test`, then load sample data in the browser and check Where it went, Recurring, Trends and Import at
+  1280px and 360px (no sideways scroll).
+- To test an unknown-bank file without a real one, set a made-up `File` on the import input with `DataTransfer` and
+  dispatch `change` (the CSP blocks `fetch`, so don't use it for tests).

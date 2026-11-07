@@ -1,0 +1,12 @@
+# Bank and card exports never go in this public repo. The page reads them on
+# the device; there's no reason for one to be here.
+*.csv
+*.CSV
+*.qfx
+*.ofx
+*.qif
+*.xlsx
+*.xls
+.DS_Store
+node_modules/
+.claude/
