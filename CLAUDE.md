@@ -73,5 +73,7 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
 
 - `npm test`, then load sample data in the browser and check Where it went, Recurring, Trends and Import at
   1280px and 360px (no sideways scroll).
+- After Rudy's first real import, write down here which layouts and wordings his files actually used (headers
+  only, never rows or account numbers), so future changes are tested against them.
 - To test an unknown-bank file without a real one, set a made-up `File` on the import input with `DataTransfer` and
   dispatch `change` (the CSP blocks `fetch`, so don't use it for tests).
