@@ -181,3 +181,15 @@ test("sameLayoutAccounts treats an old saved 'Chase card' as that layout", () =>
   assert.deepEqual(sameLayoutAccounts(saved, [], {}, "chase-card").map((x) => x.name), ["Chase card"]);
   assert.deepEqual(sameLayoutAccounts(saved, [], {}, "amex"), []);
 });
+
+// Rudy's checking layout (headers only): two amount columns, both named "Amount …".
+test("guessMapping picks split columns for Amount Debit / Amount Credit", () => {
+  const h = ["Transaction Number", "Date", "Description", "Memo", "Amount Debit", "Amount Credit", "Balance", "Check Number"];
+  const body = [["1", "10/01/2026", "FRESH MART", "", "-54.12", "", "100.00", ""],
+    ["2", "10/02/2026", "PAYROLL", "", "", "2100.00", "2200.00", ""]];
+  const g = guessMapping(h, body);
+  assert.equal(g.mode, "split");
+  assert.deepEqual([h[g.date], h[g.desc], h[g.debit], h[g.credit]], ["Date", "Description", "Amount Debit", "Amount Credit"]);
+  const rows = readRows(body, g);
+  assert.deepEqual(rows.map((t) => [t.out, t.kind]), [[5412, "spend"], [-210000, "income"]]);
+});

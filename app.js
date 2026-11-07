@@ -602,9 +602,11 @@ document.addEventListener("click", (e) => {
     }
   } else if (a === "remove-account") {
     const name = el.dataset.account;
-    if (confirm(`Remove every ${name} transaction from this browser? Your rules stay.`)) {
+    if (confirm(`Remove every ${name} transaction from this browser? Your rules stay. If this page asked which column is which for it, it asks again next time.`)) {
       db.txs = db.txs.filter((t) => t.account !== name);
       delete db.layouts[name];
+      // Forget its column answers too, so loading it again asks afresh.
+      for (const [sig, m] of Object.entries(db.mappings)) if (m.account === name) delete db.mappings[sig];
       save(); refresh(); render();
     }
   } else if (a === "remove-rule") { delete db.rules[el.dataset.key]; save(); refresh(); render(); }

@@ -144,7 +144,9 @@ export function guessMapping(headers, body) {
   const amount = find(/amount/);
   const debit = find(/debit|withdraw/);
   const credit = find(/credit|deposit/, /card/);
-  const mode = amount < 0 && debit >= 0 && credit >= 0 ? "split" : "single";
+  // "Amount Debit" + "Amount Credit" also match /amount/, so two separate
+  // columns win over a single amount column.
+  const mode = debit >= 0 && credit >= 0 && debit !== credit ? "split" : "single";
   const amtCol = amount >= 0 ? amount
     : headers.findIndex((_, i) => i !== date && body.slice(0, 5).every((r) => parseAmount(r[i]) != null));
   let neg = 0, posi = 0;
