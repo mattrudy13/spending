@@ -6,7 +6,7 @@ import {
   parseCsv, parseAmount, parseDate, splitHeader, detectFormat, guessMapping, readRows,
   merchantKey, categorize, issuerCategory, mergeTransactions, findRecurring, buildStats,
   usualFor, isFullMonth, accountRanges, DEFAULT_CATEGORIES, NOT_SPENDING, median,
-  sameLayoutAccounts, likelyAccount,
+  sameLayoutAccounts, likelyAccount, filterRows,
 } from "../lib.js";
 
 const CHASE = `Transaction Date,Post Date,Description,Category,Type,Amount,Memo
@@ -211,4 +211,25 @@ test("checking rows are named from Memo and card payments found there", () => {
   assert.equal(rows[2].desc, "FRESH MART #0123 ANYTOWN IL");
   assert.equal(rows[4].desc, "ACH DEPOSIT");
   assert.equal(merchantKey("POS WITHDRAWAL FRESH MART #0123"), merchantKey("FRESH MART #0123"));
+});
+
+test("filterRows searches names, wording and amounts; filters and sorts", () => {
+  const r = (date, desc, out, account, cat) => ({ tx: { date, desc, out, account }, key: merchantKey(desc), cat });
+  const rows = [
+    r("2026-10-03", "NETFLIX.COM", 1799, "Freedom", "subs"),
+    r("2026-11-03", "NETFLIX.COM", 1799, "Freedom", "subs"),
+    r("2026-11-05", "ACH WITHDRAWAL CHASE CREDIT CRD", 124018, "Checking", NOT_SPENDING),
+    r("2026-11-04", "SHELL OIL 57444326804", 4130, "Sapphire", "car"),
+    r("2026-11-02", "SQ *BLUE BOTTLE", 11700, "Sapphire", "dining"),
+  ];
+  const descs = (f) => filterRows(rows, f).map((x) => `${x.tx.date} ${x.tx.out}`);
+  assert.deepEqual(descs({}), ["2026-11-05 124018", "2026-11-04 4130", "2026-11-03 1799", "2026-11-02 11700", "2026-10-03 1799"]);
+  assert.deepEqual(descs({ q: "netflix" }), ["2026-11-03 1799", "2026-10-03 1799"]);
+  assert.deepEqual(descs({ q: "credit crd" }), ["2026-11-05 124018"]);
+  assert.deepEqual(descs({ q: "17" }), ["2026-11-03 1799", "2026-10-03 1799"]);
+  assert.deepEqual(descs({ q: "$1,240.18" }), ["2026-11-05 124018"]);
+  assert.deepEqual(descs({ q: "41.3" }), ["2026-11-04 4130"]);
+  assert.deepEqual(descs({ account: "Sapphire", sort: "amount" }), ["2026-11-02 11700", "2026-11-04 4130"]);
+  assert.deepEqual(descs({ showOff: false, cat: "subs" }), ["2026-11-03 1799", "2026-10-03 1799"]);
+  assert.equal(filterRows(rows, { showOff: false }).length, 4);
 });

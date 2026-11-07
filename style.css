@@ -230,3 +230,59 @@ dialog p { margin: 0 0 14px; font-size: 14px; overflow-wrap: anywhere; }
 .map.picked input[name="name"] { opacity: 0.55; }
 .map .err { color: var(--rust); min-height: 0; margin: 0; }
 .map .err:empty { display: none; }
+
+/* ---------- All transactions: two-line rows on a phone, a table from 860px */
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.all-title { margin: 2px 0 0; font-size: 26px; letter-spacing: -0.01em; }
+.all-count { margin: 0; font-size: 13px; }
+.all-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 16px 0 4px; }
+.all-search { flex: 1 1 100%; display: flex; }
+.all-search input { width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--ink); border-radius: 4px; background: #fff; font-size: 16px; }
+.all-selects { flex: 1 1 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.all-selects select { min-height: 44px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--card); font-size: 15px; min-width: 0; }
+/* Same pills as Trends; on a phone they scroll sideways instead of wrapping. */
+.all .chips { flex: 1 1 100%; flex-wrap: nowrap; overflow-x: auto; margin: 0 -16px 0 0; padding-right: 16px; }
+.all .chip { flex: none; white-space: nowrap; }
+.all-off { margin: 0; }
+.all-sum { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; padding: 10px 14px; margin: 8px 0 4px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 4px; font-size: 14px; }
+.all-month { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 8px; padding: 16px 0 6px; border-bottom: 2px solid var(--ink); }
+.all-month h2 { margin: 0; font-size: 17px; }
+.all-month span { font-size: 12px; }
+.all-head { display: none; }
+.arow { width: 100%; display: grid; grid-template-columns: 50px minmax(0, 1fr) auto; grid-template-areas: "date name amt" "date acct cat";
+  column-gap: 10px; padding: 10px 0; border: 0; border-bottom: 1px solid var(--track); background: none; text-align: left; cursor: pointer; }
+.arow:hover { background: var(--card); }
+.a-date { grid-area: date; font-size: 12px; color: var(--muted); padding-top: 3px; }
+.a-date small { display: block; }
+.a-name { grid-area: name; min-width: 0; font-weight: 500; overflow-wrap: anywhere; }
+.a-raw { display: none; }
+.a-amt { grid-area: amt; text-align: right; white-space: nowrap; }
+.a-amt.refund { color: var(--green); }
+.a-acct { grid-area: acct; font-size: 12px; color: var(--muted); }
+.a-cat { grid-area: cat; font-size: 12px; color: var(--muted); text-align: right; }
+.a-cat.other { color: var(--rust); }
+.arow.off .a-name, .arow.off .a-amt { color: var(--muted); font-weight: 400; }
+.all-more { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 12px; padding: 16px 0 0; margin: 0; font-size: 14px; }
+
+@media (min-width: 860px) {
+  .all-title { font-size: 34px; }
+  .all-count { font-size: 14px; }
+  .all-search { flex: 1 1 320px; }
+  .all-selects { flex: 0 1 auto; display: flex; }
+  .all-search { order: 1; }
+  .all-selects { order: 2; }
+  .all .chips { order: 3; flex: 1 1 auto; flex-wrap: wrap; margin: 0; padding-right: 0; overflow: visible; }
+  .all-off { order: 4; flex: none; }
+  .all-month { padding-top: 20px; }
+  .all-month span { font-size: 13px; }
+  .all-head, .arow { grid-template-columns: 84px minmax(0, 1fr) 220px 110px 120px; grid-template-areas: "date name cat acct amt"; column-gap: 16px; }
+  .all-head { display: grid; padding: 18px 0 8px; border-bottom: 2px solid var(--ink); font-size: 12px; font-weight: 500; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.08em; }
+  .all-head .r { text-align: right; }
+  .arow { padding: 9px 0; align-items: baseline; }
+  .a-date { font-size: 13px; padding-top: 0; }
+  .a-raw { display: inline; margin-left: 8px; font-size: 12px; font-weight: 400; color: var(--muted); }
+  .a-cat, .a-acct { font-size: 14px; text-align: left; color: var(--ink); }
+  .arow.off .a-cat, .arow.off .a-acct { color: var(--muted); }
+}

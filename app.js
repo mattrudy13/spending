@@ -3,7 +3,7 @@ import * as L from "./lib.js";
 import { sampleFiles } from "./sample.js";
 
 const STORE = "spending:v1";
-const VIEWS = ["where", "recurring", "trends", "files"];
+const VIEWS = ["where", "recurring", "trends", "all", "files"];
 
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -35,7 +35,8 @@ function load() {
 
 let db = load();
 let stats = null, recurring = null;
-const ui = { view: "where", month: null, open: null, trendCat: "all", notes: [], saveFailed: false };
+const ui = { view: "where", month: null, open: null, trendCat: "all", notes: [], saveFailed: false,
+  all: { q: "", account: "", cat: "", sort: "date", showOff: true, limit: 200 } };
 
 function save() {
   try { localStorage.setItem(STORE, JSON.stringify(db)); ui.saveFailed = false; }
@@ -78,7 +79,7 @@ function render() {
     db.sample ? `<div class="banner">You're looking at <b>made-up sample data</b>. Importing your own file replaces it. <button class="link" data-action="clear-sample">Remove sample</button></div>` : "",
     ui.saveFailed ? `<div class="banner warn">This browser wouldn't save the data (private browsing, or storage is full). It works until you close the tab.</div>` : "",
   ].join("");
-  const view = { where: viewWhere, recurring: viewRecurring, trends: viewTrends, files: viewFiles }[ui.view];
+  const view = { where: viewWhere, recurring: viewRecurring, trends: viewTrends, all: viewAll, files: viewFiles }[ui.view];
   main.innerHTML = view();
 }
 
@@ -372,6 +373,89 @@ function viewFiles() {
   </div>`;
 }
 
+// -------- All transactions
+// One list for every row, payments and money in included (greyed), so Rudy can
+// check what was and wasn't counted. Two-line rows on a phone, a table from
+// 860px (CSS only). Only the list redraws while typing, so the search box
+// keeps focus.
+
+const PAGE = 200;
+const OFF_LABEL = { payment: "Card payment", transfer: "Payment or transfer", income: "Money in" };
+
+function viewAll() {
+  if (!db.txs.length) return emptyState();
+  const f = ui.all;
+  const accounts = Object.keys(stats.ranges);
+  if (f.account && !accounts.includes(f.account)) f.account = "";
+  const chip = (value, label) => `<button class="chip" data-action="all-account" data-account="${esc(value)}" aria-pressed="${f.account === value}">${esc(label)}</button>`;
+  return `<div class="wrap all">
+    <div class="month-head"><div>
+      <div class="eyebrow">Every row from every file</div>
+      <h1 class="all-title">All transactions</h1>
+    </div><p class="num muted all-count">${db.txs.length.toLocaleString("en-US")} rows</p></div>
+    <div class="all-filters">
+      <label class="all-search"><span class="sr">Search</span>
+        <input type="search" data-action="all-q" value="${esc(f.q)}" placeholder="Search merchant or amount" autocomplete="off"></label>
+      <div class="chips">${chip("", "All accounts")}${accounts.map((a) => chip(a, a)).join("")}</div>
+      <div class="all-selects">
+        <select data-action="all-cat" aria-label="Category"><option value="">All categories</option>
+          ${db.categories.map((c) => `<option value="${c.id}" ${f.cat === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select>
+        <select data-action="all-sort" aria-label="Sort"><option value="date">Newest first</option><option value="amount" ${f.sort === "amount" ? "selected" : ""}>Biggest first</option></select>
+      </div>
+      <label class="check all-off"><input type="checkbox" data-action="all-off" ${f.showOff ? "checked" : ""}> Show rows that aren't spending</label>
+    </div>
+    <div id="all-list">${allList()}</div>
+    <p class="foot">Tap a row to change its category. Greyed rows aren't counted as spending: card payments, transfers between
+      your accounts and money coming in.</p>
+  </div>`;
+}
+
+function allList() {
+  const f = ui.all;
+  const rows = L.filterRows(stats.rows, f);
+  const counted = (r) => r.cat !== L.NOT_SPENDING;
+  const spent = (list) => list.reduce((t, r) => t + (counted(r) ? r.tx.out : 0), 0);
+  const filtered = f.q.trim() || f.account || f.cat;
+  const sum = filtered ? `<div class="all-sum"><span>${rows.length.toLocaleString("en-US")} row${rows.length === 1 ? "" : "s"} match</span>
+    <span class="num strong">${fmt2(spent(rows))} spent</span><button class="link" data-action="all-clear">Clear</button></div>` : "";
+  if (!rows.length) return `${sum}<p class="tx-empty">Nothing matches.</p>`;
+
+  // Month headings only make sense newest first; biggest first is one list.
+  const byMonth = new Map();
+  if (f.sort === "date") for (const r of rows) {
+    const m = byMonth.get(r.month) ?? [];
+    m.push(r); byMonth.set(r.month, m);
+  }
+  const shown = rows.slice(0, f.limit);
+  let html = "", month = null;
+  for (const r of shown) {
+    if (f.sort === "date" && r.month !== month) {
+      month = r.month;
+      const list = byMonth.get(month);
+      html += `<div class="all-month"><h2>${monthLong(month)}</h2><span class="num muted">${fmt2(spent(list))} spent · ${list.length} row${list.length === 1 ? "" : "s"}</span></div>`;
+    }
+    const off = !counted(r), t = r.tx;
+    const cat = off ? `${r.mine || t.kind === "spend" || t.kind === "refund" ? "Not spending (your pick)" : OFF_LABEL[t.kind]} · not counted`
+      : `${catName(r.cat)}${t.kind === "refund" ? " · refund" : ""}`;
+    // Money in (and payments on a card) is a plus; a refund comes off spending.
+    const amt = t.out < 0 ? (off ? `+${fmt2(-t.out)}` : fmt2(t.out)) : fmt2(t.out);
+    html += `<button class="arow${off ? " off" : ""}" data-action="fix" data-id="${t.id}">
+      <span class="a-date num">${dayShort(t.date)}${f.sort === "amount" ? `<small>${t.date.slice(0, 4)}</small>` : ""}</span>
+      <span class="a-name">${esc(L.displayName(r.key))}<small class="a-raw">${esc(clean(t.desc))}</small></span>
+      <span class="a-cat${r.cat === "other" ? " other" : ""}">${esc(cat)}</span>
+      <span class="a-acct">${esc(t.account)}</span>
+      <span class="a-amt num${!off && t.out < 0 ? " refund" : ""}">${amt}</span>
+    </button>`;
+  }
+  const head = `<div class="all-head" aria-hidden="true"><span>Date</span><span>Merchant</span><span>Category</span><span>Account</span><span class="r">Amount</span></div>`;
+  const more = rows.length > shown.length
+    ? `<p class="all-more"><button class="btn" data-action="all-more">Show ${Math.min(PAGE, rows.length - shown.length)} more</button>
+      <span class="muted">${shown.length.toLocaleString("en-US")} of ${rows.length.toLocaleString("en-US")}</span></p>` : "";
+  return `${sum}${head}<div class="all-rows">${html}</div>${more}`;
+}
+
+function redrawAll() { const el = $("#all-list"); if (el) el.innerHTML = allList(); }
+
 // ---------------------------------------------------------------- importing
 
 async function importFiles(files) {
@@ -612,11 +696,27 @@ document.addEventListener("click", (e) => {
       save(); refresh(); render();
     }
   } else if (a === "remove-rule") { delete db.rules[el.dataset.key]; save(); refresh(); render(); }
+  else if (a === "all-account") { ui.all.account = el.dataset.account; ui.all.limit = PAGE; render(); }
+  else if (a === "all-more") { ui.all.limit += PAGE; redrawAll(); }
+  else if (a === "all-clear") { Object.assign(ui.all, { q: "", account: "", cat: "", limit: PAGE }); render(); }
+});
+
+document.addEventListener("input", (e) => {
+  if (e.target.dataset.action !== "all-q") return;
+  ui.all.q = e.target.value; ui.all.limit = PAGE;
+  redrawAll();
 });
 
 document.addEventListener("change", (e) => {
   const el = e.target, a = el.dataset.action;
   if (a === "import" && el.files.length) importFiles([...el.files]);
+  else if (a === "all-cat" || a === "all-sort" || a === "all-off") {
+    if (a === "all-cat") ui.all.cat = el.value;
+    else if (a === "all-sort") ui.all.sort = el.value;
+    else ui.all.showOff = el.checked;
+    ui.all.limit = PAGE;
+    redrawAll();
+  }
   else if (a === "rename-cat") {
     const c = db.categories.find((x) => x.id === el.dataset.cat), name = clean(el.value);
     if (c && name) { c.name = name; save(); refresh(); render(); }

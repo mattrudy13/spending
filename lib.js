@@ -455,6 +455,30 @@ export function buildStats(db) {
   return { rows, spend, ranges, byMonth, months, full };
 }
 
+// The All view: every row, narrowed by a search, account and category, sorted
+// newest first or biggest first. The search matches the merchant name, the
+// bank's own wording, or an amount: "17.99" finds $17.99 and "17" finds any
+// $17.xx, but not $117 or $170.
+export function filterRows(rows, { q = "", account = "", cat = "", sort = "date", showOff = true } = {}) {
+  const text = q.trim().toLowerCase();
+  const amt = /^\$?[\d,]*\.?\d+$/.test(text) ? text.replace(/[$,]/g, "") : null;
+  const [whole, frac] = amt != null ? amt.split(".") : [];
+  const amountMatch = (out) => {
+    const [w, c] = (Math.abs(out) / 100).toFixed(2).split(".");
+    return (whole === "" || w === whole) && (frac === undefined || c.startsWith(frac));
+  };
+  const hits = rows.filter((r) => {
+    if (!showOff && r.cat === NOT_SPENDING) return false;
+    if (account && r.tx.account !== account) return false;
+    if (cat && r.cat !== cat) return false;
+    if (!text) return true;
+    if (amt != null && amountMatch(r.tx.out)) return true;
+    return displayName(r.key).toLowerCase().includes(text) || r.tx.desc.toLowerCase().includes(text);
+  });
+  const byDate = (a, b) => (a.tx.date < b.tx.date ? 1 : a.tx.date > b.tx.date ? -1 : 0);
+  return hits.sort(sort === "amount" ? (a, b) => Math.abs(b.tx.out) - Math.abs(a.tx.out) || byDate(a, b) : byDate);
+}
+
 // "Usual" = median of the last 6 full months before this one. Median, not
 // average, so one vacation month doesn't make every normal month look cheap.
 // The total's usual is the median of monthly totals, so it won't equal the sum

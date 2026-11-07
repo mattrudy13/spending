@@ -15,6 +15,10 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
   layouts, and removing an account forgets its column answers so loading it again asks afresh.
 - **v0.4** (2026-11-07): the column form has a second name column ("Store name, if in another column"), pre-filled
   with Memo. Rows are named from it when filled; card payments and transfers are looked for in both columns.
+- **v0.5** (2026-11-07): All tab (`#all`): every row, newest first or biggest first, with search (merchant, bank
+  wording or amount), account pills, category, and "Show rows that aren't spending" (on by default, greyed).
+  Rudy picked a table on desktop and two-line rows on a phone (mockups:
+  https://claude.ai/artifact/696yDfi7XpsLkqsGkXKQSc), filters inline. Loads 200 rows at a time.
 
 ## Rudy's choices (ask before changing)
 
@@ -31,7 +35,7 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
 - Accounts: checking at a bank he didn't name, not Chase (the column form handles it), two Chase cards and Amex.
   Cards are told apart by a name he picks on import, never by the account digits in Chase's file names.
 - Views: Where it went (month by category vs usual), recurring charges (price changes, new, stopped), trends over
-  months. **No budgets or targets.**
+  months, and All (every row, searchable). **No budgets or targets.**
 - 12 starter categories (renamable, mergeable in the app): Housing, Bills & utilities, Groceries, Dining, Gas & car
   (car insurance too), Shopping, Subscriptions, Health, Travel, Fun, Gifts & giving, Other.
 - Real files are tested by Rudy at the end of v0.1 (agreed 2026-11-07); the importers were built from the banks'
@@ -68,7 +72,8 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
 ## Files
 
 - `index.html`, `style.css`, `app.js`: the page. Plain JS modules, no build. Views are hash routes (`#where`,
-  `#recurring`, `#trends`, `#files`).
+  `#recurring`, `#trends`, `#all`, `#files`). `.chips`/`.chip` are shared with Trends; All-only tweaks are
+  scoped under `.all`.
 - `lib.js`: all logic (CSV, layouts, merchants, categories, months, recurring, merging). No DOM; tests import it.
 - `sample.js`: seeded made-up data written as Chase/Amex/checking CSV text and run through the real importer.
   Importing a real file clears it.
