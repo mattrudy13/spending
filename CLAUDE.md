@@ -19,6 +19,8 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
   wording or amount), account pills, category, and "Show rows that aren't spending" (on by default, greyed).
   Rudy picked a table on desktop and two-line rows on a phone (mockups:
   https://claude.ai/artifact/696yDfi7XpsLkqsGkXKQSc), filters inline. Loads 200 rows at a time.
+- **v0.6** (2026-11-07): Interest and Sportsbooks categories (Rudy asked). Saved data gets them once via
+  `addNewCategories` (`db.added` remembers which were offered, so a deleted one stays gone).
 
 ## Rudy's choices (ask before changing)
 
@@ -36,8 +38,12 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
   Cards are told apart by a name he picks on import, never by the account digits in Chase's file names.
 - Views: Where it went (month by category vs usual), recurring charges (price changes, new, stopped), trends over
   months, and All (every row, searchable). **No budgets or targets.**
-- 12 starter categories (renamable, mergeable in the app): Housing, Bills & utilities, Groceries, Dining, Gas & car
-  (car insurance too), Shopping, Subscriptions, Health, Travel, Fun, Gifts & giving, Other.
+- 14 starter categories (renamable, mergeable in the app): Housing, Bills & utilities, Groceries, Dining, Gas & car
+  (car insurance too), Shopping, Subscriptions, Health, Travel, Fun, Gifts & giving, Interest, Sportsbooks, Other.
+  A new starter category goes in `ADDED_CATEGORIES` too, or saved data never gets it.
+- Interest = card lines with "INTEREST CHARGE" (PURCHASE INTEREST CHARGE, INTEREST CHARGE ON …). Sportsbooks =
+  DraftKings, FanDuel, Bet365, and counts **deposits only**: winnings (to checking, or a credit on a card) are money
+  in, not a refund off the category, so a winning month can't make spending look low.
 - Real files are tested by Rudy at the end of v0.1 (agreed 2026-11-07); the importers were built from the banks'
   published layouts.
 

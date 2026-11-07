@@ -22,13 +22,14 @@ const dayLong = (d) => `${dayShort(d)}, ${d.slice(0, 4)}`;
 
 const blank = () => ({
   version: 1, txs: [], categories: L.DEFAULT_CATEGORIES.map((c) => ({ ...c })),
-  rules: {}, overrides: {}, mappings: {}, layouts: {}, sample: false,
+  rules: {}, overrides: {}, mappings: {}, layouts: {}, added: [...L.ADDED_CATEGORIES], sample: false,
 });
 
 function load() {
   try {
     const d = JSON.parse(localStorage.getItem(STORE));
-    if (d && d.version === 1) return { ...blank(), ...d };
+    // Data saved before a starter category existed gets it added once.
+    if (d && d.version === 1) return L.addNewCategories({ ...blank(), ...d, added: d.added ?? [] });
   } catch { /* private mode or bad data: start fresh */ }
   return blank();
 }
@@ -435,7 +436,7 @@ function allList() {
       html += `<div class="all-month"><h2>${monthLong(month)}</h2><span class="num muted">${fmt2(spent(list))} spent · ${list.length} row${list.length === 1 ? "" : "s"}</span></div>`;
     }
     const off = !counted(r), t = r.tx;
-    const cat = off ? `${r.mine || t.kind === "spend" || t.kind === "refund" ? "Not spending (your pick)" : OFF_LABEL[t.kind]} · not counted`
+    const cat = off ? `${r.mine ? "Not spending (your pick)" : OFF_LABEL[t.kind] ?? "Money in"} · not counted`
       : `${catName(r.cat)}${t.kind === "refund" ? " · refund" : ""}`;
     // Money in (and payments on a card) is a plus; a refund comes off spending.
     const amt = t.out < 0 ? (off ? `+${fmt2(-t.out)}` : fmt2(t.out)) : fmt2(t.out);

@@ -19,8 +19,36 @@ export const DEFAULT_CATEGORIES = [
   { id: "travel", name: "Travel" },
   { id: "fun", name: "Fun" },
   { id: "gifts", name: "Gifts & giving" },
+  { id: "interest", name: "Interest" },
+  { id: "sportsbooks", name: "Sportsbooks" },
   { id: "other", name: "Other" },
 ];
+
+// Starter categories added after v0.1. Saved data keeps its own category
+// list, so each one is added to it once (Rudy can still delete or merge it
+// later). If he already made one with that name, that one takes the id, so the
+// starter rules land there instead of in a twin.
+export const ADDED_CATEGORIES = ["interest", "sportsbooks"];
+
+export function addNewCategories(db) {
+  db.added ??= [];
+  for (const id of ADDED_CATEGORIES) {
+    if (db.added.includes(id)) continue;
+    db.added.push(id);
+    if (db.categories.some((c) => c.id === id)) continue;
+    const def = DEFAULT_CATEGORIES.find((c) => c.id === id);
+    const same = db.categories.find((c) => c.name.trim().toLowerCase() === def.name.toLowerCase());
+    if (same) {
+      const old = same.id;
+      same.id = id;
+      for (const m of [db.rules, db.overrides]) for (const k of Object.keys(m ?? {})) if (m[k] === old) m[k] = id;
+      continue;
+    }
+    const at = db.categories.findIndex((c) => c.id === "other");
+    db.categories.splice(at < 0 ? db.categories.length : at, 0, { ...def });
+  }
+  return db;
+}
 
 // Pseudo-category for rows that aren't spending (card payments, transfers,
 // paychecks). Picking it in the app teaches a rule like any other category.
@@ -233,6 +261,11 @@ const PROCESSOR = /^(SQ|TST|SP|PY|PP|PAYPAL|DD|IC|GOOGLE|GGL|FS|BT|CKE|LS|EB)\s?
 const ALIASES = [
   [/^(AMAZON PRIME|PRIME VIDEO)/, "AMAZON PRIME"],
   [/^(AMZN|AMAZON)/, "AMAZON"],
+  // Sportsbooks show up with processor junk in front ("DK*", "FD *"), so these
+  // match anywhere in the line.
+  [/DRAFT ?KINGS|^DK\s?\*/, "DRAFTKINGS"],
+  [/FAN ?DUEL/, "FANDUEL"],
+  [/BET ?365/, "BET365"],
   [/^APPLE\.?COM\/?BILL|^APPLE COM BILL/, "APPLE.COM/BILL"],
   [/^UBER\s*\*?\s*EATS|^UBEREATS/, "UBER EATS"],
   [/^UBER\b/, "UBER"],
@@ -282,6 +315,8 @@ export function merchantKey(desc) {
 const KEEP_UPPER = new Set(["AT&T", "CVS", "TJ", "BP", "AMC", "LLC", "USA", "UPS", "IKEA", "T-MOBILE"]);
 export function displayName(key) {
   if (key === "APPLE.COM/BILL") return "Apple (App Store/iCloud)";
+  const brand = { DRAFTKINGS: "DraftKings", FANDUEL: "FanDuel", BET365: "Bet365" }[key];
+  if (brand) return brand;
   return key.split(" ").map((w) => KEEP_UPPER.has(w) ? w
     : w.toLowerCase().replace(/(^|[-'/&.])([a-z])/g, (_, p, c) => p + c.toUpperCase())).join(" ");
 }
@@ -307,6 +342,9 @@ const STARTER = [
 const STARTER_WORDS = [
   [/\b(RENT|APARTMENTS?|PROPERTY MGMT|PROPERTY MANAGEMENT|LEASING|RENTERS INS)\b/, "housing"],
   [/\b(POWER|ENERGY|ELECTRIC|WATER|SEWER|UTILITY|UTILITIES|INTERNET|BROADBAND|WIRELESS)\b/, "bills"],
+  // Card interest: "PURCHASE INTEREST CHARGE", "INTEREST CHARGE ON PURCHASES".
+  [/\bINTEREST CHARGE\b/, "interest"],
+  [/^(DRAFTKINGS|FANDUEL|BET365)$/, "sportsbooks"],
 ];
 
 export function starterCategory(key) {
@@ -345,6 +383,9 @@ export function categorize(tx, key, db) {
   if (own && (own === NOT_SPENDING || db.categories.some((c) => c.id === own))) return { cat: own, mine: true };
   if (tx.kind === "payment" || tx.kind === "transfer" || tx.kind === "income") return { cat: NOT_SPENDING, mine: false };
   const cat = starterCategory(key) ?? issuerCategory(tx.issuerCat) ?? "other";
+  // Rudy's call: Sportsbooks counts deposits only. Winnings credited to a card
+  // are money in, like winnings paid to checking, not a refund off the category.
+  if (cat === "sportsbooks" && tx.kind === "refund") return { cat: NOT_SPENDING, mine: false };
   return { cat: db.categories.some((c) => c.id === cat) ? cat : "other", mine: false };
 }
 

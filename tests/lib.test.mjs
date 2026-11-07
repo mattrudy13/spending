@@ -6,7 +6,7 @@ import {
   parseCsv, parseAmount, parseDate, splitHeader, detectFormat, guessMapping, readRows,
   merchantKey, categorize, issuerCategory, mergeTransactions, findRecurring, buildStats,
   usualFor, isFullMonth, accountRanges, DEFAULT_CATEGORIES, NOT_SPENDING, median,
-  sameLayoutAccounts, likelyAccount, filterRows,
+  sameLayoutAccounts, likelyAccount, filterRows, addNewCategories,
 } from "../lib.js";
 
 const CHASE = `Transaction Date,Post Date,Description,Category,Type,Amount,Memo
@@ -232,4 +232,33 @@ test("filterRows searches names, wording and amounts; filters and sorts", () => 
   assert.deepEqual(descs({ account: "Sapphire", sort: "amount" }), ["2026-11-02 11700", "2026-11-04 4130"]);
   assert.deepEqual(descs({ showOff: false, cat: "subs" }), ["2026-11-03 1799", "2026-10-03 1799"]);
   assert.equal(filterRows(rows, { showOff: false }).length, 4);
+});
+
+test("interest and sportsbook charges get their own categories", () => {
+  const db = { categories: DEFAULT_CATEGORIES, rules: {}, overrides: {} };
+  const cat = (desc, out = 1000, kind = "spend") => categorize({ id: "x", desc, out, kind }, merchantKey(desc), db).cat;
+  assert.equal(cat("PURCHASE INTEREST CHARGE"), "interest");
+  assert.equal(cat("INTEREST CHARGE ON PURCHASES"), "interest");
+  assert.equal(cat("DRAFTKINGS INC BOSTON MA"), "sportsbooks");
+  assert.equal(cat("DK*DRAFTKINGS 8665"), "sportsbooks");
+  assert.equal(cat("FANDUEL SPORTSBOOK"), "sportsbooks");
+  assert.equal(cat("FD *FANDUEL"), "sportsbooks");
+  assert.equal(cat("BET365 NJ"), "sportsbooks");
+  // Deposits only: winnings credited to a card don't come off the category.
+  assert.equal(cat("FANDUEL SPORTSBOOK", -5000, "refund"), NOT_SPENDING);
+  assert.equal(merchantKey("DK*DRAFTKINGS 8665"), merchantKey("DRAFTKINGS INC"));
+});
+
+test("addNewCategories adds new starters once, before Other, or adopts a same-named one", () => {
+  const old = DEFAULT_CATEGORIES.filter((c) => !["interest", "sportsbooks"].includes(c.id)).map((c) => ({ ...c }));
+  const db = addNewCategories({ categories: old.map((c) => ({ ...c })), rules: {}, overrides: {} });
+  assert.deepEqual(db.categories.slice(-3).map((c) => c.id), ["interest", "sportsbooks", "other"]);
+  // Deleted later: not added back.
+  db.categories = db.categories.filter((c) => c.id !== "sportsbooks");
+  assert.equal(addNewCategories(db).categories.some((c) => c.id === "sportsbooks"), false);
+  // He'd already made "Interest" himself: it takes the id and keeps his rules.
+  const own = addNewCategories({ categories: [...old.map((c) => ({ ...c })), { id: "c1", name: "interest" }],
+    rules: { "SOME BANK": "c1" }, overrides: {} });
+  assert.equal(own.categories.filter((c) => c.name.toLowerCase() === "interest").length, 1);
+  assert.equal(own.rules["SOME BANK"], "interest");
 });
