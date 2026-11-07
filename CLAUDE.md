@@ -15,6 +15,8 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
 - **Browser only.** Files are read on the device and saved in that browser's localStorage (`spending:v1`). Laptop and
   phone keep separate copies. Nothing is uploaded, ever, and there's no server. The page's CSP has
   `connect-src 'none'`, so even a bug can't send data. Don't add analytics, a backend, sync or any outside request.
+- localStorage is per origin, and all of Rudy's Pages sites share `mattrudy13.github.io`. Keep the `spending:` key
+  prefix, and never let another site's code read it.
 - **No account numbers.** Never read, store or ask for them. Amex's "Account #" column is ignored on purpose.
 - **Public repo, no data in it.** `.gitignore` blocks `*.csv` and other export formats. Test fixtures live inside
   `tests/lib.test.mjs` as strings, all made up. Starter merchant rules are national chains only: nothing that hints
