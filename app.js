@@ -429,7 +429,9 @@ function askMapping(fileName, headers, body) {
       <label>Account type<select name="accountType"><option value="bank" ${guess.accountType === "bank" ? "selected" : ""}>Bank account</option><option value="card">Credit card</option></select></label>
       <label>Date<select name="date">${opts(guess.date)}</select></label>
       <label>Description<select name="desc">${opts(guess.desc)}</select></label>
+      <label>Store name, if in another column<select name="memo">${opts(guess.memo, true)}</select></label>
     </div>
+    <p class="muted">Pick that second column when Description is generic (like ACH WITHDRAWAL) and the store or payee is elsewhere, such as Memo.</p>
     <fieldset><legend>Amount</legend>
       <label class="radio"><input type="radio" name="mode" value="single" ${guess.mode === "single" ? "checked" : ""}> One amount column</label>
       <div class="grid2 indent">
@@ -451,7 +453,7 @@ function askMapping(fileName, headers, body) {
     // Read the controls directly: FormData skips disabled selects.
     const f = new FormData(form), n = (k) => +form.elements[k].value;
     return { format: "custom", account: clean(f.get("account")) || "Checking", accountType: f.get("accountType"),
-      date: n("date"), desc: n("desc"), mode: f.get("mode"), amount: n("amount"), debit: n("debit"), credit: n("credit"),
+      date: n("date"), desc: n("desc"), memo: n("memo"), mode: f.get("mode"), amount: n("amount"), debit: n("debit"), credit: n("credit"),
       sign: form.elements.sign.value, category: -1, type: -1 };
   };
   const label = { spend: "spent", refund: "refund", payment: "card payment, not counted", transfer: "card payment or transfer, not counted", income: "money in, not counted" };

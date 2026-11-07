@@ -193,3 +193,22 @@ test("guessMapping picks split columns for Amount Debit / Amount Credit", () => 
   const rows = readRows(body, g);
   assert.deepEqual(rows.map((t) => [t.out, t.kind]), [[5412, "spend"], [-210000, "income"]]);
 });
+
+// Rudy's checking: Description is generic, the payee is always in Memo.
+test("checking rows are named from Memo and card payments found there", () => {
+  const h = ["Transaction Number", "Date", "Description", "Memo", "Amount Debit", "Amount Credit", "Balance", "Check Number"];
+  const body = [
+    ["1", "10/01/2026", "ACH WITHDRAWAL", "CHASE CREDIT CRD AUTOPAY", "-500.00", "", "1", ""],
+    ["2", "10/02/2026", "ACH WITHDRAWAL", "AMEX EPAYMENT ACH PMT", "-300.00", "", "1", ""],
+    ["3", "10/03/2026", "POS WITHDRAWAL", "FRESH MART #0123 ANYTOWN IL", "-54.12", "", "1", ""],
+    ["4", "10/04/2026", "ACH WITHDRAWAL", "FIBER INTERNET AUTOPAY", "-70.00", "", "1", ""],
+    ["5", "10/05/2026", "ACH DEPOSIT", "", "", "2100.00", "1", ""],
+  ];
+  const g = guessMapping(h, body);
+  assert.equal(h[g.memo], "Memo");
+  const rows = readRows(body, g);
+  assert.deepEqual(rows.map((t) => t.kind), ["transfer", "transfer", "spend", "spend", "income"]);
+  assert.equal(rows[2].desc, "FRESH MART #0123 ANYTOWN IL");
+  assert.equal(rows[4].desc, "ACH DEPOSIT");
+  assert.equal(merchantKey("POS WITHDRAWAL FRESH MART #0123"), merchantKey("FRESH MART #0123"));
+});

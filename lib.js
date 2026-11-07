@@ -141,6 +141,7 @@ export function guessMapping(headers, body) {
   if (date < 0) date = headers.findIndex((_, i) => body.slice(0, 5).every((r) => parseDate(r[i])));
   let desc = find(/desc|payee|merchant|memo|name|details/);
   if (desc < 0) desc = longestTextColumn(body, date);
+  const memo = h.findIndex((x, i) => i !== desc && /memo/.test(x));
   const amount = find(/amount/);
   const debit = find(/debit|withdraw/);
   const credit = find(/credit|deposit/, /card/);
@@ -151,7 +152,7 @@ export function guessMapping(headers, body) {
     : headers.findIndex((_, i) => i !== date && body.slice(0, 5).every((r) => parseAmount(r[i]) != null));
   let neg = 0, posi = 0;
   for (const r of body) { const v = parseAmount(r[amtCol]); if (v < 0) neg++; else if (v > 0) posi++; }
-  return { format: "custom", account: "Checking", accountType: "bank", date, desc,
+  return { format: "custom", account: "Checking", accountType: "bank", date, desc, memo,
     mode, amount: amtCol, debit, credit, sign: neg >= posi ? "negative" : "positive",
     category: -1, type: -1 };
 }
@@ -174,7 +175,12 @@ export function readRows(body, map) {
     const date = parseDate(r[map.date]);
     // Keep inner spacing: Amex pads merchant and city with runs of spaces, and
     // merchantKey uses that gap. The page collapses it for display.
-    const desc = (r[map.desc] || "").trim();
+    // Some banks put a generic word in Description (ACH WITHDRAWAL) and the
+    // store or payee in another column (Memo). Name the row after that column
+    // when it's filled, but look for card payments and transfers in both.
+    const main = (r[map.desc] || "").trim();
+    const detail = map.memo >= 0 ? (r[map.memo] || "").trim() : "";
+    const desc = detail || main;
     let amt;
     if (map.mode === "split") {
       const d = parseAmount(r[map.debit]) ?? 0, c = parseAmount(r[map.credit]) ?? 0;
@@ -189,7 +195,7 @@ export function readRows(body, map) {
     const issuerCat = map.category >= 0 ? (r[map.category] || "").trim() : "";
     const type = map.type >= 0 ? (r[map.type] || "").trim() : "";
     out.push({ account: map.account, date, desc, out: amt, issuerCat,
-      kind: classify({ desc, out: amt, type }, map.accountType) });
+      kind: classify({ desc: detail ? `${main} ${detail}` : desc, out: amt, type }, map.accountType) });
   }
   return out;
 }
@@ -222,7 +228,7 @@ export function classify({ desc, out, type }, accountType) {
 
 // ---------------------------------------------------------------- merchants
 
-const BANK_PREFIX = /^(POS PURCHASE|POS DEBIT|POS|DEBIT CARD PURCHASE|DEBIT PURCHASE|VISA PURCHASE|CHECKCARD|CHECK CARD|DBT CRD|PURCHASE AUTHORIZED ON|RECURRING PAYMENT AUTHORIZED ON|RECURRING PAYMENT|PREAUTHORIZED DEBIT|ACH DEBIT|ACH WITHDRAWAL|ACH)\b\s*/;
+const BANK_PREFIX = /^(POS PURCHASE|POS DEBIT|POS WITHDRAWAL|POINT OF SALE WITHDRAWAL|POINT OF SALE|POS|DEBIT CARD PURCHASE|DEBIT CARD WITHDRAWAL|DEBIT PURCHASE|VISA PURCHASE|CHECKCARD|CHECK CARD|DBT CRD|PURCHASE AUTHORIZED ON|RECURRING PAYMENT AUTHORIZED ON|RECURRING PAYMENT|PREAUTHORIZED DEBIT|ACH DEBIT|ACH WITHDRAWAL|ACH)\b\s*/;
 const PROCESSOR = /^(SQ|TST|SP|PY|PP|PAYPAL|DD|IC|GOOGLE|GGL|FS|BT|CKE|LS|EB)\s?\*\s*/;
 const ALIASES = [
   [/^(AMAZON PRIME|PRIME VIDEO)/, "AMAZON PRIME"],
