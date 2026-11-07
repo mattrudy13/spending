@@ -22,7 +22,7 @@ const dayLong = (d) => `${dayShort(d)}, ${d.slice(0, 4)}`;
 
 const blank = () => ({
   version: 1, txs: [], categories: L.DEFAULT_CATEGORIES.map((c) => ({ ...c })),
-  rules: {}, overrides: {}, mappings: {}, sample: false,
+  rules: {}, overrides: {}, mappings: {}, layouts: {}, sample: false,
 });
 
 function load() {
@@ -98,7 +98,7 @@ function emptyState() {
 function howTo() {
   return `<details class="howto"><summary>How to download the CSV files</summary>
     <ul>
-      <li><b>Chase card:</b> on chase.com, open the card, choose <i>Download account activity</i> (the download icon above the transactions), pick CSV and a date range.</li>
+      <li><b>Chase card:</b> on chase.com, open the card, choose <i>Download account activity</i> (the download icon above the transactions), pick CSV and a date range. With two Chase cards, download each one; the page asks which card each file is.</li>
       <li><b>Amex:</b> go to <i>Statements &amp; Activity</i>, choose <i>Download</i>, then CSV. Tick "Include all additional transaction details" to get Amex's categories.</li>
       <li><b>Checking:</b> on the account's activity page look for <i>Download</i> or <i>Export</i> and pick CSV. The first time, this page asks which column is which.</li>
     </ul>
@@ -386,7 +386,7 @@ async function importFiles(files) {
   go(db.txs.length && notes.some((n) => n.kind === "ok") && ui.view !== "files" ? ui.view : "files");
 }
 
-async function importText(name, text, preset) {
+async function importText(name, text, preset, sample = false) {
   const rows = L.parseCsv(text);
   if (rows.length < 2) return { kind: "bad", text: `${name}: no rows found. Is it a CSV export?` };
   const { headers, body } = L.splitHeader(rows);
@@ -399,6 +399,13 @@ async function importText(name, text, preset) {
   }
   const txs = L.readRows(body, map);
   if (!txs.length) return { kind: "bad", text: `${name}: no transactions found with those columns.` };
+  if (map.format === "chase-card" && !sample) {
+    const card = await askCard(name, txs);
+    if (!card) return { kind: "warn", text: `${name}: skipped.` };
+    map = { ...map, account: card };
+    for (const t of txs) t.account = card;
+  }
+  db.layouts[map.account] = map.format;
   const r = L.mergeTransactions(db.txs, txs);
   db.txs = r.txs;
   const dates = txs.map((t) => t.date).sort();
@@ -465,9 +472,60 @@ function askMapping(fileName, headers, body) {
   });
 }
 
+// Both of Rudy's Chase cards download the same layout, so every Chase card
+// file asks which card it is. Card names only, never numbers.
+function askCard(fileName, txs) {
+  const dlg = $("#map-dialog");
+  const choices = L.sameLayoutAccounts(db.txs, txs, db.layouts, "chase-card");
+  const pick = L.likelyAccount(choices, txs.length);
+  const dates = txs.map((t) => t.date).sort();
+  const common = (n) => n === 0 ? "none of this file's rows" : n === txs.length ? "all of this file's rows" : `${n} of this file's ${txs.length} rows`;
+  dlg.innerHTML = `<form method="dialog" class="map">
+    <h2 id="map-title">Which Chase card is this?</h2>
+    <p class="muted">${esc(fileName)}: ${txs.length.toLocaleString("en-US")} rows, ${dayLong(dates[0])} – ${dayLong(dates[dates.length - 1])}.
+      Chase cards all download the same layout, so the page asks.</p>
+    <fieldset><legend>Card</legend>
+      ${choices.map((c) => `<label class="radio"><input type="radio" name="card" value="${esc(c.name)}" ${c.name === pick ? "checked" : ""}>
+        <span>${esc(c.name)}<small>${dayLong(c.first)} – ${dayLong(c.last)} · already has ${common(c.overlap)}</small></span></label>`).join("")}
+      <label class="radio"><input type="radio" name="card" value="" ${pick ? "" : "checked"}> <span>A new card</span></label>
+      <div class="indent"><label>Name for the new card<input name="name" maxlength="24" placeholder="e.g. Freedom"></label></div>
+    </fieldset>
+    <p class="err" role="alert"></p>
+    <div class="dlg-actions"><button class="btn" value="cancel">Skip this file</button><button class="btn primary" value="ok">Import</button></div>
+  </form>`;
+  const form = $("form", dlg), input = form.elements.name, err = $(".err", dlg);
+  const isNew = () => form.elements.card.value === "";
+  const sync = () => { form.classList.toggle("picked", !isNew()); err.textContent = ""; };
+  // A typed name that matches a saved Chase card means that card; one that
+  // matches another account (Amex, checking) would mix two accounts' rows.
+  const chosen = () => {
+    if (!isNew()) return { name: form.elements.card.value };
+    const name = clean(input.value);
+    if (!name) return { error: "Give the new card a name, like Freedom or Sapphire." };
+    const same = Object.keys(L.accountRanges(db.txs)).find((a) => a.toLowerCase() === name.toLowerCase());
+    if (!same) return { name };
+    return choices.some((c) => c.name === same) ? { name: same } : { error: `${same} is already another account's name.` };
+  };
+  form.addEventListener("change", sync);
+  // Typing a name means a new card. Enter imports (the first button is Skip).
+  input.addEventListener("input", () => { if (!isNew()) { form.elements.card.value = ""; sync(); } });
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $(".primary", form).click(); } });
+  form.addEventListener("submit", (e) => {
+    if (e.submitter?.value !== "ok") return;
+    const c = chosen();
+    if (c.error) { e.preventDefault(); err.textContent = c.error; input.focus(); }
+  });
+  sync();
+  return new Promise((resolve) => {
+    dlg.addEventListener("close", () => resolve(dlg.returnValue === "ok" ? chosen().name : null), { once: true });
+    dlg.showModal();
+    if (isNew()) input.focus();
+  });
+}
+
 async function loadSample() {
   clearData();
-  for (const f of sampleFiles()) await importText(f.name, f.text, f.mapping);
+  for (const f of sampleFiles()) await importText(f.name, f.text, f.mapping, true);
   db.sample = true;
   ui.notes = [];
   save(); refresh();
@@ -546,6 +604,7 @@ document.addEventListener("click", (e) => {
     const name = el.dataset.account;
     if (confirm(`Remove every ${name} transaction from this browser? Your rules stay.`)) {
       db.txs = db.txs.filter((t) => t.account !== name);
+      delete db.layouts[name];
       save(); refresh(); render();
     }
   } else if (a === "remove-rule") { delete db.rules[el.dataset.key]; save(); refresh(); render(); }

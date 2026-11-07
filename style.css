@@ -220,9 +220,13 @@ dialog p { margin: 0 0 14px; font-size: 14px; overflow-wrap: anywhere; }
 .map fieldset { border: 1px solid var(--line); padding: 10px 12px; margin: 6px 0 12px; }
 .map legend { font-size: 13px; color: var(--muted); padding: 0 4px; }
 .map label.radio { flex-direction: row; align-items: center; gap: 8px; font-size: 15px; color: var(--ink); min-height: 40px; }
-.map label.radio input { min-height: 0; width: 18px; height: 18px; }
+.map label.radio input { min-height: 0; width: 18px; height: 18px; flex: none; margin: 0 2px; }
 .preview { list-style: none; padding: 0; margin: 6px 0 0; font-size: 13px; }
 .preview li { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 8px; padding: 6px 0; border-bottom: 1px dashed var(--line); }
 .preview li span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .preview .bad { display: block; color: var(--rust); }
 @media (max-width: 420px) { .map .grid2 { grid-template-columns: minmax(0, 1fr); } .map .indent { margin-left: 0; } }
+.map label.radio span small { display: block; font-size: 13px; color: var(--muted); }
+.map.picked input[name="name"] { opacity: 0.55; }
+.map .err { color: var(--rust); min-height: 0; margin: 0; }
+.map .err:empty { display: none; }

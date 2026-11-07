@@ -9,6 +9,8 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
 
 - **v0.1** (2026-11-07): first build. Where it went, Recurring, Trends, Import and settings; Chase card, Chase
   checking and Amex layouts plus a "which column is which" form for any other bank; sample data button.
+- **v0.2** (2026-11-07): two Chase cards. Every Chase card file asks "Which Chase card is this?" (pick a saved card
+  or name a new one); it preselects a card only when more than half the file is already in it.
 
 ## Rudy's choices (ask before changing)
 
@@ -22,7 +24,8 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
   `tests/lib.test.mjs` as strings, all made up. Starter merchant rules are national chains only: nothing that hints
   at where Rudy lives or shops. His own rules stay in his browser.
 - **Not linked from Rudy's Board** (hub). Friends see the Board. He uses a Home Screen icon instead.
-- Accounts: checking at a bank he didn't name (the column form handles it), a Chase card and Amex.
+- Accounts: checking at a bank he didn't name, not Chase (the column form handles it), two Chase cards and Amex.
+  Cards are told apart by a name he picks on import, never by the account digits in Chase's file names.
 - Views: Where it went (month by category vs usual), recurring charges (price changes, new, stopped), trends over
   months. **No budgets or targets.**
 - 12 starter categories (renamable, mergeable in the app): Housing, Bills & utilities, Groceries, Dining, Gas & car
@@ -49,6 +52,8 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
   Partial months show "so far" and no more/less verdict.
 - **Re-import** never doubles: rows are counted per (account, date, amount, description), so two real same-day
   coffees stay and an overlapping file only adds what's new.
+- **Layouts per account:** `db.layouts` maps account name → layout (`chase-card`, `amex`, `custom`…). Data saved
+  before v0.2 has none; `OLD_LAYOUTS` in `lib.js` treats the old default names ("Chase card" etc.) as theirs.
 - **Recurring** (`findRecurring`): same merchant, amount within 1% (min 10¢), every 20–40 days (monthly) or
   330–400 (yearly). Monthly needs 3 charges, or 2 of the exact same amount. A new price one cycle after a 3+ charge
   series is a price change. The series must be ≥60% of that merchant's charges over its span unless every amount is

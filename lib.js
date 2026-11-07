@@ -383,6 +383,37 @@ export function accountRanges(txs) {
   return r;
 }
 
+// Accounts saved before the page recorded each account's layout.
+const OLD_LAYOUTS = { "Chase card": "chase-card", "Chase checking": "chase-checking", Amex: "amex" };
+
+// Two cards from one bank download the same layout, so the page can't tell
+// them apart from the file. Lists the saved accounts with that layout, plus how
+// many of the new file's rows each one already holds: a re-downloaded file
+// overlaps its own card, while a different card shares (almost) nothing.
+export function sameLayoutAccounts(existing, incoming, layouts, format) {
+  const ranges = accountRanges(existing);
+  const key = (t) => `${t.date}|${t.out}|${t.desc}`;
+  return Object.keys(ranges)
+    .filter((a) => (layouts[a] ?? OLD_LAYOUTS[a]) === format)
+    .map((name) => {
+      const have = new Map();
+      for (const t of existing) if (t.account === name) have.set(key(t), (have.get(key(t)) ?? 0) + 1);
+      let overlap = 0;
+      for (const t of incoming) {
+        const n = have.get(key(t)) ?? 0;
+        if (n > 0) { overlap++; have.set(key(t), n - 1); }
+      }
+      return { name, ...ranges[name], overlap };
+    });
+}
+
+// The card to preselect: only when more than half the file is already in one
+// card. A file that only covers new months matches nothing, so no guess.
+export function likelyAccount(choices, fileRows) {
+  const best = [...choices].sort((a, b) => b.overlap - a.overlap)[0];
+  return best && best.overlap * 2 > fileRows ? best.name : null;
+}
+
 // A month only counts toward "usual" if every account's file covers all of it.
 // Otherwise a month missing the checking file (rent!) would look cheap and drag
 // the usual down. Small slack because the first charge is rarely on the 1st.

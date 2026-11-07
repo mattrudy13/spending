@@ -6,6 +6,7 @@ import {
   parseCsv, parseAmount, parseDate, splitHeader, detectFormat, guessMapping, readRows,
   merchantKey, categorize, issuerCategory, mergeTransactions, findRecurring, buildStats,
   usualFor, isFullMonth, accountRanges, DEFAULT_CATEGORIES, NOT_SPENDING, median,
+  sameLayoutAccounts, likelyAccount,
 } from "../lib.js";
 
 const CHASE = `Transaction Date,Post Date,Description,Category,Type,Amount,Memo
@@ -151,4 +152,32 @@ test("usual month needs full months from every account", () => {
   const stats = buildStats(db);
   assert.equal(usualFor(stats, "2026-03"), null); // only 2 months before it
   assert.equal(usualFor(stats, "2026-05"), 25001); // median of Jan–Apr totals (10k, 20k, 30k, 40k)
+});
+
+// Two Chase cards share one layout; the import asks which card a file is.
+test("sameLayoutAccounts lists cards of that layout with their overlap", () => {
+  const tx = (account, date, out, desc) => ({ account, date, out, desc });
+  const saved = [
+    tx("Freedom", "2026-10-01", 1000, "COFFEE"),
+    tx("Freedom", "2026-10-01", 1000, "COFFEE"),
+    tx("Freedom", "2026-10-05", 2500, "GAS"),
+    tx("Sapphire", "2026-10-03", 9000, "HOTEL"),
+    tx("Amex", "2026-10-01", 1000, "COFFEE"),
+  ];
+  const layouts = { Freedom: "chase-card", Sapphire: "chase-card", Amex: "amex" };
+  // A re-download of Freedom: one coffee more than saved, plus a new row.
+  const file = [tx("Chase card", "2026-10-01", 1000, "COFFEE"), tx("Chase card", "2026-10-01", 1000, "COFFEE"),
+    tx("Chase card", "2026-10-01", 1000, "COFFEE"), tx("Chase card", "2026-10-05", 2500, "GAS")];
+  const c = sameLayoutAccounts(saved, file, layouts, "chase-card");
+  assert.deepEqual(c.map((x) => [x.name, x.overlap]), [["Freedom", 3], ["Sapphire", 0]]);
+  assert.equal(likelyAccount(c, file.length), "Freedom");
+  // Only new months: matches nothing, so no guess.
+  assert.equal(likelyAccount(c, 10), null);
+  assert.equal(likelyAccount([], 4), null);
+});
+
+test("sameLayoutAccounts treats an old saved 'Chase card' as that layout", () => {
+  const saved = [{ account: "Chase card", date: "2026-10-01", out: 500, desc: "X" }];
+  assert.deepEqual(sameLayoutAccounts(saved, [], {}, "chase-card").map((x) => x.name), ["Chase card"]);
+  assert.deepEqual(sameLayoutAccounts(saved, [], {}, "amex"), []);
 });
