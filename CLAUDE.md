@@ -11,6 +11,8 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
   checking and Amex layouts plus a "which column is which" form for any other bank; sample data button.
 - **v0.2** (2026-11-07): two Chase cards. Every Chase card file asks "Which Chase card is this?" (pick a saved card
   or name a new one); it preselects a card only when more than half the file is already in it.
+- **v0.3** (2026-11-07): the column form guesses split debit/credit columns for "Amount Debit"/"Amount Credit"
+  layouts, and removing an account forgets its column answers so loading it again asks afresh.
 
 ## Rudy's choices (ask before changing)
 
@@ -78,7 +80,14 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
 
 - `npm test`, then load sample data in the browser and check Where it went, Recurring, Trends and Import at
   1280px and 360px (no sideways scroll).
-- After Rudy's first real import, write down here which layouts and wordings his files actually used (headers
-  only, never rows or account numbers), so future changes are tested against them.
+- Rudy's real files (headers only, sent 2026-11-07; test changes against these):
+  - Chase card, both cards: `Transaction Date, Post Date, Description, Category, Type, Amount, Memo` (built-in).
+  - Amex: `Date, Description, Amount, Extended Details, Appears On Your Statement As, Address, City/State, Zip Code,
+    Country, Reference, Category`. No Card Member or Account # columns; detected by Extended Details.
+  - Checking (column form): `Transaction Number, Date, Description, Memo, Amount Debit, Amount Credit, Balance,
+    Check Number`. Both amount columns match /amount/, so `guessMapping` prefers split debit/credit when both exist
+    (before v0.3 it guessed one column, Amount Debit, and lost every credit).
+  - Still unknown: his checking bank's wording for card payments and transfers, and whether the merchant is in
+    Description or Memo.
 - To test an unknown-bank file without a real one, set a made-up `File` on the import input with `DataTransfer` and
   dispatch `change` (the CSP blocks `fetch`, so don't use it for tests).
