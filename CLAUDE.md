@@ -13,6 +13,8 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
   or name a new one); it preselects a card only when more than half the file is already in it.
 - **v0.3** (2026-11-07): the column form guesses split debit/credit columns for "Amount Debit"/"Amount Credit"
   layouts, and removing an account forgets its column answers so loading it again asks afresh.
+- **v0.4** (2026-11-07): the column form has a second name column ("Store name, if in another column"), pre-filled
+  with Memo. Rows are named from it when filled; card payments and transfers are looked for in both columns.
 
 ## Rudy's choices (ask before changing)
 
@@ -87,7 +89,8 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
   - Checking (column form): `Transaction Number, Date, Description, Memo, Amount Debit, Amount Credit, Balance,
     Check Number`. Both amount columns match /amount/, so `guessMapping` prefers split debit/credit when both exist
     (before v0.3 it guessed one column, Amount Debit, and lost every credit).
-  - Still unknown: his checking bank's wording for card payments and transfers, and whether the merchant is in
-    Description or Memo.
+  - Checking wording: Description is always generic (ACH WITHDRAWAL, POS/debit-card wording, deposit wording) and
+    the payee is always in Memo. Card payments read ACH WITHDRAWAL + "CHASE CREDIT CRD…" or "AMEX EPAYMENT…" in
+    Memo. Before v0.4 only Description was read, so those payments counted as spending.
 - To test an unknown-bank file without a real one, set a made-up `File` on the import input with `DataTransfer` and
   dispatch `change` (the CSP blocks `fetch`, so don't use it for tests).
