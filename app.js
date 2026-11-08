@@ -399,7 +399,8 @@ function viewTrends() {
       ${typical != null ? `<div class="typical" style="--p:${(typical / max).toFixed(4)}"><span>typical</span></div>` : ""}
       ${months.map((m, i) => `<button class="t-bar${stats.full.has(m) ? "" : " partial"}" data-action="goto-month" data-month="${m}"
           aria-label="${monthLong(m)}: ${fmt0(value(m))}"><span style="height:${Math.max(0.5, (Math.max(0, value(m)) / max) * 100).toFixed(1)}%">${
-          value(m) > 0 && !dense ? `<i class="t-val" aria-hidden="true">${shortMoney(value(m))}</i>` : ""}</span>
+          dense ? `<i class="t-val hover ${i < months.length / 2 ? "l" : "r"}" aria-hidden="true">${MONTHS[+m.slice(5) - 1].slice(0, 3)} ${m.slice(0, 4)} · ${fmt0(value(m))}</i>`
+          : value(m) > 0 ? `<i class="t-val" aria-hidden="true">${shortMoney(value(m))}</i>` : ""}</span>
           <em>${barLabel(m, i)}</em></button>`).join("")}
     </div>
     ${table}

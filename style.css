@@ -199,8 +199,22 @@ button, input, select { font: inherit; color: inherit; }
 .range .link { min-height: 36px; padding: 4px 10px; border-radius: 18px; text-decoration: none; color: var(--muted); font-size: 14px; }
 .range .link[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
 /* Past 24 months the bars are thin: 1px gaps, and only January gets a (year) label. */
-.trend.dense { gap: 1px; }
+/* The 1px gap is padding inside each bar, so the hover label doesn't flicker
+   off between bars. */
+.trend.dense { gap: 0; }
+.trend.dense .t-bar { padding: 0 0.5px; }
 .trend.dense .t-bar em { transform: none; left: 0; }
+/* A hover label, on purpose (Rudy asked, 2026-11-07): past 24 bars there's no
+   room for a $ label on every bar, so on a computer pointing at a bar shows its
+   month and amount. Phones skip it; the table below has every month. It opens
+   toward the middle of the chart so it never runs off either edge. */
+.trend.dense .t-val { display: none; }
+.trend.dense .t-val.hover { padding: 2px 6px; border: 1px solid var(--ink); border-radius: 3px; }
+.trend.dense .t-val.l { left: 0; transform: none; }
+.trend.dense .t-val.r { left: auto; right: 0; transform: none; }
+@media (min-width: 860px) and (hover: hover) {
+  .trend.dense .t-bar:hover .t-val, .trend.dense .t-bar:focus-visible .t-val { display: block; }
+}
 .track input[type="search"] { width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--ink); border-radius: 4px; background: #fff; font-size: 16px; }
 .track-list { list-style: none; margin: 8px 0 0; padding: 0; max-height: min(50vh, 360px); overflow-y: auto; }
 .track-list li.muted { padding: 12px 0; font-size: 14px; }

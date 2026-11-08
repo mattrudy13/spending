@@ -46,6 +46,9 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
   uses 1px gaps and labels only Januaries with the year, so it fits a phone without scrolling. Typical is the
   median of the full months shown, so it follows the range (Rudy's choice). Storage is ~130–200 bytes a row,
   roughly 300 KB a year, so years of history fit in localStorage.
+- **v0.13** (2026-11-07): on a computer, pointing at a bar in the 5-year/All chart shows "May 2024 · $3,262".
+  A hover label on purpose: Rudy asked for it despite his no-tooltip rule, since there's no room for a label on
+  every bar. Phones skip it (the table has every month).
 
 ## Rudy's choices (ask before changing)
 
