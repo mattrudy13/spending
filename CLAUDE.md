@@ -30,6 +30,11 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
   wording is stripped (every row was named "Terminal"); YouTube TV is its own merchant; LOTTERY goes to
   Sportsbooks (Rudy's call). Masked card numbers ("XXXX…1234") are cut from row text on import and from saved
   rows on load (`scrubDesc`).
+- **v0.10** (2026-11-07): track a merchant on Trends (Rudy asked, for DoorDash). "+ Track a merchant" lists the
+  biggest merchants over the last 6 months, with search over all of them (mockups:
+  https://claude.ai/artifact/8LrjWjQzHYPLqGqRCtz6pp, way 1 picked). A tracked merchant gets a button under
+  "Merchants you track": bar chart, typical month, and Month | Spent | Orders | Avg order. DashPass is its own
+  merchant (a subscription), so DoorDash counts food orders only.
 
 ## Rudy's choices (ask before changing)
 
@@ -47,7 +52,8 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
 - Accounts: checking at a bank he didn't name, not Chase (the column form handles it), two Chase cards and Amex.
   Cards are told apart by a name he picks on import, never by the account digits in Chase's file names.
 - Views: Where it went (month by category vs usual), recurring charges (price changes, new, stopped), trends over
-  months, and All (every row, searchable). **No budgets or targets.**
+  months (by category, or a merchant he tracks: `db.tracked`, `ui.trendCat = "m:<key>"`), and All (every row,
+  searchable). **No budgets or targets.**
 - 14 starter categories (renamable, mergeable in the app): Housing, Bills & utilities, Groceries, Dining, Gas & car
   (car insurance too), Shopping, Subscriptions, Health, Travel, Fun, Gifts & giving, Interest, Sportsbooks, Other.
   A new starter category goes in `ADDED_CATEGORIES` too, or saved data never gets it.

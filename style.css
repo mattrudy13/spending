@@ -171,6 +171,25 @@ button, input, select { font: inherit; color: inherit; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0; }
 .chip { min-height: 40px; padding: 6px 12px; border: 1px solid var(--line); background: var(--card); border-radius: 20px; cursor: pointer; font-size: 14px; }
 .chip[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.chip.add { border-style: dashed; color: var(--green); }
+.trends .month-head .link { white-space: nowrap; }
+/* On a phone each button row scrolls sideways (like the All tab's accounts), so the
+   tracked merchants aren't pushed below four rows of categories. */
+@media (max-width: 859px) {
+  .trends .chips { flex-wrap: nowrap; overflow-x: auto; margin-right: -16px; padding-right: 16px; scrollbar-width: none; }
+  .trends .chip { flex: none; }
+}
+.trends .chips { margin: 0 0 4px; }
+.chip-label { font-size: 12px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin: 18px 0 6px; }
+.trends .chips + .chip-label { margin-top: 12px; }
+.trends .trend { margin-top: 20px; }
+.track input[type="search"] { width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--ink); border-radius: 4px; background: #fff; font-size: 16px; }
+.track-list { list-style: none; margin: 8px 0 0; padding: 0; max-height: min(50vh, 360px); overflow-y: auto; }
+.track-list li.muted { padding: 12px 0; font-size: 14px; }
+.pick-m { display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 12px; min-height: 52px; padding: 6px 2px;
+  border: 0; border-bottom: 1px solid var(--track); background: none; text-align: left; cursor: pointer; }
+.pick-m:hover { background: var(--card); }
+.pick-m small { display: block; font-size: 12px; color: var(--muted); }
 .trend { position: relative; display: flex; align-items: stretch; gap: 4px; height: 220px; padding-bottom: 22px; border-bottom: 1px solid var(--ink); margin: 8px 0 24px; }
 .t-bar { flex: 1; min-width: 0; position: relative; background: none; border: 0; padding: 0; cursor: pointer; display: flex; align-items: flex-end; }
 .t-bar span { display: block; width: 100%; background: var(--green); }
@@ -182,7 +201,7 @@ button, input, select { font: inherit; color: inherit; }
 .t-table { width: 100%; border-collapse: collapse; font-size: 15px; margin-bottom: 32px; }
 .t-table th { font-size: 12px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; text-align: left; padding: 6px 0; border-bottom: 1px solid var(--line); }
 .t-table td { padding: 10px 0; border-bottom: 1px solid #e3dfd3; }
-.t-table .r { text-align: right; }
+.t-table .r { text-align: right; padding-left: 12px; }
 
 /* ---------- Files */
 .page-title { font-size: 26px; letter-spacing: -0.02em; margin: 24px 0 16px; }

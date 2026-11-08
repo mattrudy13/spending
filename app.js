@@ -24,6 +24,7 @@ const blank = () => ({
   version: 1, txs: [], categories: L.DEFAULT_CATEGORIES.map((c) => ({ ...c })),
   rules: {}, overrides: {}, mappings: {}, layouts: {}, added: [...L.ADDED_CATEGORIES], sample: false,
   notRecurring: [], // merchant keys Rudy marked "Not recurring"
+  tracked: [], // merchant keys shown on Trends under "Merchants you track"
 
 });
 
@@ -314,32 +315,50 @@ function viewRecurring() {
 
 // -------- Trends
 
+// ui.trendCat is a category id, "all", or "m:<merchant key>" for a tracked merchant.
 function viewTrends() {
   if (!db.txs.length) return emptyState();
-  const cat = ui.trendCat;
+  let cat = ui.trendCat;
+  const merchant = cat.startsWith("m:") && db.tracked.includes(cat.slice(2)) ? cat.slice(2) : null;
+  if (cat.startsWith("m:") && !merchant) cat = ui.trendCat = "all";
   const months = stats.months.slice(-24);
-  const value = (m) => { const b = stats.byMonth.get(m); return !b ? 0 : cat === "all" ? b.total : b.cats.get(cat) ?? 0; };
-  const fullVals = months.filter((m) => stats.full.has(m)).map(value);
+  const mm = merchant ? L.merchantMonths(stats.spend, merchant) : null;
+  const value = (m) => {
+    if (mm) return mm.get(m)?.spent ?? 0;
+    const b = stats.byMonth.get(m);
+    return !b ? 0 : cat === "all" ? b.total : b.cats.get(cat) ?? 0;
+  };
+  const orders = (m) => mm.get(m)?.orders ?? 0;
+  const fullMonths = months.filter((m) => stats.full.has(m));
+  const fullVals = fullMonths.map(value);
   const typical = L.median(fullVals);
   const max = Math.max(1, ...months.map(value), typical ?? 0);
   const used = db.categories.filter((c) => stats.spend.some((r) => r.cat === c.id));
-  const chips = [{ id: "all", name: "All spending" }, ...used].map((c) =>
-    `<button class="chip" data-action="trend-cat" data-cat="${c.id}" aria-pressed="${c.id === cat}">${esc(c.name)}</button>`).join("");
+  const chip = (id, name) => `<button class="chip" data-action="trend-cat" data-cat="${esc(id)}" aria-pressed="${id === cat}">${esc(name)}</button>`;
+  const catChips = [{ id: "all", name: "All spending" }, ...used].map((c) => chip(c.id, c.name)).join("");
+  const merchantChips = db.tracked.map((k) => chip(`m:${k}`, L.displayName(k))).join("")
+    + `<button class="chip add" data-action="track-pick">+ Track a merchant</button>`;
   const showLabel = (i) => months.length <= 13 || i % 3 === (months.length - 1) % 3;
-  return `<div class="wrap narrow">
-    <div class="month-head"><div>
-      <div class="eyebrow">${cat === "all" ? "All spending" : esc(catName(cat))} by month</div>
-      <div class="total num">${typical != null ? fmt0(typical) : "—"}<span class="per">typical</span></div>
-      <div class="sub">median of ${fullVals.length} full month${fullVals.length === 1 ? "" : "s"} shown · lighter bars are months a file doesn't fully cover</div>
-    </div></div>
-    <div class="chips">${chips}</div>
-    <div class="trend" role="img" aria-label="Bar chart of monthly spending; the same numbers are in the table below.">
-      ${typical != null ? `<div class="typical" style="bottom:${((typical / max) * 100).toFixed(1)}%"><span>typical</span></div>` : ""}
-      ${months.map((m, i) => `<button class="t-bar${stats.full.has(m) ? "" : " partial"}" data-action="goto-month" data-month="${m}"
-          aria-label="${monthLong(m)}: ${fmt0(value(m))}"><span style="height:${Math.max(0.5, (Math.max(0, value(m)) / max) * 100).toFixed(1)}%"></span>
-          <em>${showLabel(i) ? MONTHS[+m.slice(5) - 1].slice(0, 3) : ""}</em></button>`).join("")}
-    </div>
-    <table class="t-table">
+  const title = merchant ? L.displayName(merchant) : cat === "all" ? "All spending" : catName(cat);
+
+  let sub = `median of ${fullVals.length} full month${fullVals.length === 1 ? "" : "s"} shown · lighter bars are months a file doesn't fully cover`;
+  if (merchant) {
+    // Average order over every full month, not the typical total over typical orders:
+    // a month with no orders would otherwise skew it.
+    const n = fullMonths.reduce((s, m) => s + orders(m), 0), spent = fullMonths.reduce((s, m) => s + value(m), 0);
+    const typicalOrders = L.median(fullMonths.map(orders));
+    sub = typicalOrders != null
+      ? `${typicalOrders} order${typicalOrders === 1 ? "" : "s"}${n ? `, ${fmt0(spent / n)} average` : ""} in a typical month · ${sub}`
+      : sub;
+  }
+  const table = merchant
+    ? `<table class="t-table">
+      <thead><tr><th>Month</th><th class="r">Spent</th><th class="r">Orders</th><th class="r">Avg order</th></tr></thead>
+      <tbody>${[...months].reverse().map((m) => `<tr><td><button class="link" data-action="goto-month" data-month="${m}">${monthLong(m)}</button>${stats.full.has(m) ? "" : ` <span class="muted">(partial)</span>`}</td>
+        <td class="r num">${fmt0(value(m))}</td><td class="r num">${orders(m)}</td><td class="r num">${orders(m) ? fmt2(Math.round(value(m) / orders(m))) : "—"}</td></tr>`).join("")}</tbody>
+    </table>
+    <p class="foot">Refunds come off the month they landed in.${merchant === "DOORDASH" ? " DashPass isn't included; it's its own subscription." : ""}</p>`
+    : `<table class="t-table">
       <thead><tr><th>Month</th><th class="r">Spent</th><th class="r">vs usual</th></tr></thead>
       <tbody>${[...months].reverse().map((m) => {
         const u = L.usualFor(stats, m, cat === "all" ? null : cat), v = value(m);
@@ -347,8 +366,63 @@ function viewTrends() {
         return `<tr><td><button class="link" data-action="goto-month" data-month="${m}">${monthLong(m)}</button>${stats.full.has(m) ? "" : ` <span class="muted">(partial)</span>`}</td>
           <td class="r num">${fmt0(v)}</td><td class="r num ${d == null ? "muted" : Math.abs(d) < Math.max(1500, u * 0.1) ? "" : d > 0 ? "up" : "down"}">${d == null ? "—" : plusMinus(d)}</td></tr>`;
       }).join("")}</tbody>
-    </table>
+    </table>`;
+  return `<div class="wrap narrow trends">
+    <div class="month-head"><div>
+      <div class="eyebrow">${esc(title)} by month</div>
+      <div class="total num">${typical != null ? fmt0(typical) : "—"}<span class="per">typical</span></div>
+      <div class="sub">${sub}</div>
+    </div>${merchant ? `<button class="link" data-action="untrack" data-key="${esc(merchant)}">Stop tracking</button>` : ""}</div>
+    <h2 class="chip-label">Categories</h2>
+    <div class="chips">${catChips}</div>
+    <h2 class="chip-label">Merchants you track</h2>
+    <div class="chips">${merchantChips}</div>
+    <div class="trend" role="img" aria-label="Bar chart of monthly spending; the same numbers are in the table below.">
+      ${typical != null ? `<div class="typical" style="bottom:${((typical / max) * 100).toFixed(1)}%"><span>typical</span></div>` : ""}
+      ${months.map((m, i) => `<button class="t-bar${stats.full.has(m) ? "" : " partial"}" data-action="goto-month" data-month="${m}"
+          aria-label="${monthLong(m)}: ${fmt0(value(m))}"><span style="height:${Math.max(0.5, (Math.max(0, value(m)) / max) * 100).toFixed(1)}%"></span>
+          <em>${showLabel(i) ? MONTHS[+m.slice(5) - 1].slice(0, 3) : ""}</em></button>`).join("")}
+    </div>
+    ${table}
   </div>`;
+}
+
+// "+ Track a merchant": the biggest merchants over the last 6 months of data,
+// with a search over every merchant for the ones further down.
+function openTrackPicker() {
+  const dlg = $("#fix-dialog");
+  const recent = L.topMerchants(stats.spend, stats.months.slice(-6));
+  const ever = L.topMerchants(stats.spend, stats.months);
+  const pickable = (list) => list.filter((m) => !db.tracked.includes(m.key));
+  const item = (m) => `<li><button class="pick-m" value="${esc(m.key)}"><span>${esc(L.displayName(m.key))}<small>${m.count} charge${m.count === 1 ? "" : "s"}</small></span>
+    <span class="num">${fmt0(m.spent)}</span></button></li>`;
+  const list = (q) => {
+    const text = q.trim().toLowerCase();
+    const hits = text ? pickable(ever).filter((m) => L.displayName(m.key).toLowerCase().includes(text)) : pickable(recent);
+    return hits.length ? hits.slice(0, 30).map(item).join("") : `<li class="muted">No merchant matches.</li>`;
+  };
+  dlg.innerHTML = `<form method="dialog" class="track">
+    <h2 id="fix-title">Track a merchant</h2>
+    <p class="muted">Your biggest merchants over the last 6 months. Search to find any other.</p>
+    <label class="sr" for="track-q">Search merchants</label>
+    <input id="track-q" type="search" placeholder="Search merchants" autocomplete="off">
+    <ul class="track-list">${list("")}</ul>
+    <div class="dlg-actions"><button class="btn" value="">Cancel</button></div>
+  </form>`;
+  $("#track-q", dlg).addEventListener("input", (e) => { $(".track-list", dlg).innerHTML = list(e.target.value); });
+  // Enter in the search box would submit the form with the first button (Cancel).
+  $("#track-q", dlg).addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); $(".pick-m", dlg)?.click(); }
+  });
+  dlg.addEventListener("close", () => {
+    const key = dlg.returnValue;
+    if (!key) return;
+    if (!db.tracked.includes(key)) db.tracked.push(key);
+    ui.trendCat = `m:${key}`;
+    save(); render();
+  }, { once: true });
+  dlg.returnValue = "";
+  dlg.showModal();
 }
 
 // -------- Files and settings
@@ -711,7 +785,7 @@ document.addEventListener("click", (e) => {
   else if (a === "sample") loadSample();
   else if (a === "clear-sample") { clearData(); save(); refresh(); render(); }
   else if (a === "clear-all") {
-    if (confirm("Delete all imported transactions, rules, categories and Not recurring choices from this browser? This can't be undone.")) {
+    if (confirm("Delete all imported transactions, rules, categories, tracked merchants and Not recurring choices from this browser? This can't be undone.")) {
       db = blank(); ui.notes = []; ui.month = null; save(); refresh(); render();
     }
   } else if (a === "remove-account") {
@@ -725,6 +799,11 @@ document.addEventListener("click", (e) => {
     }
   } else if (a === "remove-rule") { delete db.rules[el.dataset.key]; save(); refresh(); render(); }
   else if (a === "rec-edit") { ui.recEdit = !ui.recEdit; render(); }
+  else if (a === "track-pick") openTrackPicker();
+  else if (a === "untrack") {
+    db.tracked = db.tracked.filter((k) => k !== el.dataset.key);
+    ui.trendCat = "all"; save(); render();
+  }
   else if (a === "not-rec") {
     if (!db.notRecurring.includes(el.dataset.key)) db.notRecurring.push(el.dataset.key);
     save(); refresh(); render();

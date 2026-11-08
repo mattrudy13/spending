@@ -6,7 +6,7 @@ import {
   parseCsv, parseAmount, parseDate, splitHeader, detectFormat, guessMapping, readRows,
   merchantKey, categorize, issuerCategory, mergeTransactions, findRecurring, buildStats,
   usualFor, isFullMonth, accountRanges, DEFAULT_CATEGORIES, NOT_SPENDING, median,
-  sameLayoutAccounts, likelyAccount, filterRows, addNewCategories, scrubDesc,
+  sameLayoutAccounts, likelyAccount, filterRows, addNewCategories, scrubDesc, merchantMonths, topMerchants,
 } from "../lib.js";
 
 const CHASE = `Transaction Date,Post Date,Description,Category,Type,Amount,Memo
@@ -182,6 +182,25 @@ test("checking terminal wording is stripped and card numbers cut", () => {
   const map = guessMapping(bank[0], bank.slice(1));
   const [row] = readRows(bank.slice(1), { ...map, account: "Checking", accountType: "bank" });
   assert.ok(!/X{4}/.test(row.desc));
+});
+
+test("one merchant by month, and the biggest merchants", () => {
+  assert.equal(merchantKey("DOORDASH*DASHPASS"), "DASHPASS");
+  assert.equal(merchantKey("DD *DOORDASH DASHPASS"), "DASHPASS");
+  assert.equal(merchantKey("DOORDASH*CHIPOTLE"), "DOORDASH");
+  const db = db0();
+  const add = (date, desc, out, kind = "spend") => db.txs.push({ id: date + desc + out, account: "card", date, desc, out, kind, issuerCat: "" });
+  add("2026-09-03", "DOORDASH*CHIPOTLE", 2348); add("2026-09-17", "DOORDASH*TACO SPOT", 1912);
+  add("2026-09-18", "DOORDASH*TACO SPOT", -500, "refund"); add("2026-09-20", "DOORDASH*DASHPASS", 999);
+  add("2026-10-02", "DOORDASH*PIZZA PLACE", 3105); add("2026-10-05", "AMAZON.COM", 4200);
+  const stats = buildStats(db);
+  assert.equal(categorize({ id: "x", kind: "spend" }, "DASHPASS", db).cat, "subs");
+  const dd = merchantMonths(stats.spend, "DOORDASH");
+  assert.deepEqual(dd.get("2026-09"), { spent: 2348 + 1912 - 500, orders: 2 });
+  assert.deepEqual(dd.get("2026-10"), { spent: 3105, orders: 1 });
+  const top = topMerchants(stats.spend, ["2026-09", "2026-10"]);
+  assert.deepEqual(top.map((m) => m.key), ["DOORDASH", "AMAZON", "DASHPASS"]);
+  assert.equal(top[0].count, 3);
 });
 
 test("usual month needs full months from every account", () => {

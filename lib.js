@@ -291,6 +291,8 @@ const ALIASES = [
   [/^(HBO ?MAX|MAX\.COM)/, "MAX"],
   [/^(GOOGLE \*?)?YOUTUBE ?TV/, "YOUTUBE TV"],
   [/^(GOOGLE \*?)?YOUTUBE/, "YOUTUBE"],
+  // DashPass is DoorDash's membership: a subscription, kept apart from food orders (Rudy's call).
+  [/^(DOORDASH\s*\*?\s*)?DASHPASS/, "DASHPASS"],
   [/^DOORDASH/, "DOORDASH"],
   [/^(WAL-?MART|WM SUPERCENTER)/, "WALMART"],
   [/^(WHOLEFDS|WHOLE FOODS)/, "WHOLE FOODS"],
@@ -331,7 +333,7 @@ const KEEP_UPPER = new Set(["AT&T", "CVS", "TJ", "BP", "AMC", "LLC", "USA", "UPS
 export function displayName(key) {
   if (key === "APPLE.COM/BILL") return "Apple (App Store/iCloud)";
   const brand = { DRAFTKINGS: "DraftKings", FANDUEL: "FanDuel", BET365: "Bet365", YOUTUBE: "YouTube",
-    "YOUTUBE TV": "YouTube TV", "MCDONALD'S": "McDonald's" }[key];
+    "YOUTUBE TV": "YouTube TV", "MCDONALD'S": "McDonald's", DOORDASH: "DoorDash", DASHPASS: "DashPass" }[key];
   if (brand) return brand;
   return key.split(" ").map((w) => KEEP_UPPER.has(w) ? w
     : w.toLowerCase().replace(/(^|[-'/&.])([a-z])/g, (_, p, c) => p + c.toUpperCase())).join(" ");
@@ -342,7 +344,7 @@ export function displayName(key) {
 // Starter rules: national chains only, so the public code says nothing about
 // where Rudy lives or shops. His own fixes are saved in his browser instead.
 const STARTER = [
-  [/^(NETFLIX|SPOTIFY|HULU|DISNEY PLUS|MAX|PEACOCK|ESPN|PARAMOUNT|YOUTUBE|APPLE\.COM\/BILL|AUDIBLE|PATREON|AMAZON PRIME|SIRIUSXM|NYTIMES|ICLOUD|GOOGLE ONE|OPENAI|CHATGPT)\b/, "subs"],
+  [/^(NETFLIX|SPOTIFY|HULU|DISNEY PLUS|MAX|PEACOCK|ESPN|PARAMOUNT|YOUTUBE|APPLE\.COM\/BILL|AUDIBLE|PATREON|AMAZON PRIME|SIRIUSXM|NYTIMES|ICLOUD|DASHPASS|GOOGLE ONE|OPENAI|CHATGPT)\b/, "subs"],
   [/^(UBER EATS|DOORDASH|GRUBHUB|STARBUCKS|DUNKIN|CHICK-FIL-A|MCDONALD'S|CHIPOTLE|TACO BELL|WENDY'?S|PANERA|SUBWAY|DOMINO'?S|PIZZA HUT|PAPA JOHN'?S|FIVE GUYS|SHAKE SHACK|SWEETGREEN|PANDA EXPRESS)\b/, "dining"],
   [/^(SHELL|EXXON|EXXONMOBIL|MOBIL|CHEVRON|BP|SUNOCO|CITGO|MARATHON|VALERO|SPEEDWAY|CIRCLE K|RACETRAC|QUIKTRIP|JIFFY LUBE|AUTOZONE|ADVANCE AUTO|GEICO|PROGRESSIVE)\b/, "car"],
   [/^(ALDI|TRADER JOE'?S?|WHOLE FOODS|KROGER|SAFEWAY|PUBLIX|INSTACART)\b/, "groceries"],
@@ -510,6 +512,34 @@ export function buildStats(db) {
   const months = all.length ? monthRange(all[0], all[all.length - 1]) : [];
   const full = new Set(months.filter((m) => isFullMonth(m, ranges)));
   return { rows, spend, ranges, byMonth, months, full };
+}
+
+// One merchant month by month, for Trends: month → { spent, orders }. Refunds
+// come off spent; only charges count as orders.
+export function merchantMonths(spend, key) {
+  const out = new Map();
+  for (const r of spend) {
+    if (r.key !== key) continue;
+    const m = out.get(r.month) ?? { spent: 0, orders: 0 };
+    m.spent += r.tx.out;
+    if (r.tx.out > 0) m.orders++;
+    out.set(r.month, m);
+  }
+  return out;
+}
+
+// Merchants by money spent over the given months, biggest first, for the
+// "Track a merchant" list: [{ key, spent, count }].
+export function topMerchants(spend, months) {
+  const want = new Set(months), by = new Map();
+  for (const r of spend) {
+    if (!want.has(r.month)) continue;
+    const m = by.get(r.key) ?? { key: r.key, spent: 0, count: 0 };
+    m.spent += r.tx.out;
+    if (r.tx.out > 0) m.count++;
+    by.set(r.key, m);
+  }
+  return [...by.values()].filter((m) => m.spent > 0).sort((a, b) => b.spent - a.spent);
 }
 
 // The All view: every row, narrowed by a search, account and category, sorted
