@@ -196,7 +196,19 @@ button, input, select { font: inherit; color: inherit; }
 .t-bar.partial span { background: repeating-linear-gradient(135deg, var(--green-soft) 0 3px, var(--track) 3px 6px); }
 .t-bar:hover span { background: #143f31; }
 .t-bar em { position: absolute; bottom: -22px; left: 50%; transform: translateX(-50%); font-style: normal; font-family: var(--mono); font-size: 11px; color: var(--muted); }
-.typical { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--ink); pointer-events: none; z-index: 1; margin-bottom: 22px; }
+.t-bar span { position: relative; }
+/* Values above the bars on desktop only (Rudy asked); a phone's bars are too narrow. */
+.t-val { display: none; position: absolute; bottom: calc(100% + 2px); left: 50%; transform: translateX(-50%); padding: 0 2px;
+  font-style: normal; font-family: var(--mono); font-size: 11px; line-height: 1.3; color: var(--ink); white-space: nowrap;
+  background: var(--paper); z-index: 2; /* above the dashed typical line */ }
+@media (min-width: 860px) {
+  .trend { --top: 20px; padding-top: 20px; height: 240px; }
+  .t-val { display: block; }
+}
+/* Bars are sized inside the content box (above the 22px month labels, below any
+   top padding), so the line is placed on that same scale. */
+.typical { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--ink); pointer-events: none; z-index: 1;
+  bottom: calc(22px + var(--p) * (100% - 22px - var(--top, 0px))); }
 .typical span { position: absolute; right: 0; top: -18px; font-size: 11px; color: var(--muted); background: var(--paper); padding: 0 4px; }
 .t-table { width: 100%; border-collapse: collapse; font-size: 15px; margin-bottom: 32px; }
 .t-table th { font-size: 12px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; text-align: left; padding: 6px 0; border-bottom: 1px solid var(--line); }

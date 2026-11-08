@@ -9,6 +9,8 @@ const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const clean = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
 const sign = (c) => (c < 0 ? "−" : "");
+// Bar labels: "$212", "$1.6k". Up to 24 bars share the chart, so they stay short.
+const shortMoney = (c) => (c < 99950 ? `$${Math.round(c / 100)}` : `$${(c / 100000).toFixed(1).replace(/\.0$/, "")}k`);
 const fmt0 = (c) => `${sign(c)}$${Math.round(Math.abs(c) / 100).toLocaleString("en-US")}`;
 const fmt2 = (c) => `${sign(c)}$${(Math.abs(c) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const plusMinus = (c) => (c > 0 ? "+" : c < 0 ? "−" : "") + `$${Math.round(Math.abs(c) / 100).toLocaleString("en-US")}`;
@@ -378,9 +380,10 @@ function viewTrends() {
     <h2 class="chip-label">Merchants you track</h2>
     <div class="chips">${merchantChips}</div>
     <div class="trend" role="img" aria-label="Bar chart of monthly spending; the same numbers are in the table below.">
-      ${typical != null ? `<div class="typical" style="bottom:${((typical / max) * 100).toFixed(1)}%"><span>typical</span></div>` : ""}
+      ${typical != null ? `<div class="typical" style="--p:${(typical / max).toFixed(4)}"><span>typical</span></div>` : ""}
       ${months.map((m, i) => `<button class="t-bar${stats.full.has(m) ? "" : " partial"}" data-action="goto-month" data-month="${m}"
-          aria-label="${monthLong(m)}: ${fmt0(value(m))}"><span style="height:${Math.max(0.5, (Math.max(0, value(m)) / max) * 100).toFixed(1)}%"></span>
+          aria-label="${monthLong(m)}: ${fmt0(value(m))}"><span style="height:${Math.max(0.5, (Math.max(0, value(m)) / max) * 100).toFixed(1)}%">${
+          value(m) > 0 ? `<i class="t-val" aria-hidden="true">${shortMoney(value(m))}</i>` : ""}</span>
           <em>${showLabel(i) ? MONTHS[+m.slice(5) - 1].slice(0, 3) : ""}</em></button>`).join("")}
     </div>
     ${table}
