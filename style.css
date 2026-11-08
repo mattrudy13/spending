@@ -156,8 +156,15 @@ button, input, select { font: inherit; color: inherit; }
 .rec-name small, .rec .num small { display: block; font-size: 12px; color: var(--muted); font-family: var(--sans); }
 .rec .num { grid-area: amt; text-align: right; white-space: nowrap; }
 .rec-next { grid-area: next; text-align: right; font-size: 13px; color: var(--muted); }
+/* Fix this list: a "Not recurring" button per row, under the amount on a phone. */
+.rec .hide-rec { grid-area: hide; justify-self: end; margin-top: 6px; border-color: var(--rust); color: var(--rust); background: var(--card); }
+.recs.editing .rec { grid-template-areas: "name amt" "name hide"; }
+.recs.editing .rec-next { display: none; }
 @media (min-width: 860px) {
   .rec { grid-template-columns: minmax(0, 1fr) 170px 120px; grid-template-areas: "name amt next"; align-items: baseline; }
+  .recs.editing .rec { grid-template-columns: minmax(0, 1fr) 170px 120px 150px; grid-template-areas: "name amt next hide"; align-items: center; }
+  .recs.editing .rec-next { display: block; }
+  .rec .hide-rec { margin-top: 0; }
 }
 
 /* ---------- Trends */

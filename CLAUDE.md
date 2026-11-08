@@ -23,6 +23,9 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
   `addNewCategories` (`db.added` remembers which were offered, so a deleted one stays gone).
 - **v0.7** (2026-11-07): Recurring needs proof by category (Rudy's real list was mostly restaurants and
   2-charge pairs). Strips Chase's "APLPAY" (Apple Pay) prefix; ESPN joins the subscription starters.
+- **v0.8** (2026-11-07): "Fix this list" on Recurring adds a "Not recurring" button to every row (Rudy picked
+  option C: https://claude.ai/artifact/AMmK3azcZVVuCBJTkdUSPg). Hides that merchant from Recurring for good
+  (`db.notRecurring`, merchant keys); Import & settings lists them with Put back.
 
 ## Rudy's choices (ask before changing)
 
@@ -78,7 +81,9 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
     whole history (else power bills and pharmacies pair up by chance).
   - Groceries, Dining, Gas & car, Shopping, Fun (`EVERYDAY`): 4+ charges at a steady price (joined price changes
     allowed, for car insurance) and ≥60% of the merchant's charges over its span, even when exact.
-  - Everything else: 3 charges, and ≥60% of the merchant's charges unless every amount is identical. Stopped = no charge for a cycle + 12 days (yearly: + 30) before
+  - Everything else: 3 charges, and ≥60% of the merchant's charges unless every amount is identical.
+  - Merchants in `db.notRecurring` are dropped before the search (whole merchant, Rudy's choice), so they stay
+    off after later imports. They still count everywhere else. Stopped = no charge for a cycle + 12 days (yearly: + 30) before
   that account's last date. Variable bills (power) aren't recurring by design.
 - The page opens on the latest month unless the data ends before the 20th, then the month before.
 

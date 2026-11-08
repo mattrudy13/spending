@@ -23,6 +23,8 @@ const dayLong = (d) => `${dayShort(d)}, ${d.slice(0, 4)}`;
 const blank = () => ({
   version: 1, txs: [], categories: L.DEFAULT_CATEGORIES.map((c) => ({ ...c })),
   rules: {}, overrides: {}, mappings: {}, layouts: {}, added: [...L.ADDED_CATEGORIES], sample: false,
+  notRecurring: [], // merchant keys Rudy marked "Not recurring"
+
 });
 
 function load() {
@@ -36,7 +38,7 @@ function load() {
 
 let db = load();
 let stats = null, recurring = null;
-const ui = { view: "where", month: null, open: null, trendCat: "all", notes: [], saveFailed: false,
+const ui = { view: "where", month: null, open: null, trendCat: "all", notes: [], saveFailed: false, recEdit: false,
   all: { q: "", account: "", cat: "", sort: "date", showOff: true, limit: 200 } };
 
 function save() {
@@ -47,8 +49,11 @@ function save() {
 function refresh() {
   stats = L.buildStats(db);
   const ends = Object.fromEntries(Object.entries(stats.ranges).map(([a, r]) => [a, r.last]));
+  // A merchant marked "Not recurring" is left out before the search, so none of
+  // its charges can form a series, now or after later imports.
+  const hidden = new Set(db.notRecurring);
   recurring = L.findRecurring(
-    stats.spend.filter((r) => r.tx.out > 0).map((r) => ({ key: r.key, date: r.tx.date, amt: r.tx.out, account: r.tx.account, cat: r.cat })),
+    stats.spend.filter((r) => r.tx.out > 0 && !hidden.has(r.key)).map((r) => ({ key: r.key, date: r.tx.date, amt: r.tx.out, account: r.tx.account, cat: r.cat })),
     ends);
 }
 
@@ -269,23 +274,29 @@ function viewRecurring() {
   const changes = recentChanges();
   const perMonth = active.reduce((s, r) => s + r.perMonth, 0);
   const catOf = (r) => catName(stats.spend.find((x) => x.key === r.key && x.tx.date === r.last)?.cat ?? "other");
+  const editing = ui.recEdit && recurring.length > 0;
+  const hide = (r) => editing ? `<button class="btn small hide-rec" data-action="not-rec" data-key="${esc(r.key)}"
+    aria-label="Not recurring: ${esc(L.displayName(r.key))}">Not recurring</button>` : "";
+  const list = editing ? "recs editing" : "recs";
   const row = (r) => `<li class="rec">
     <span class="rec-name">${esc(L.displayName(r.key))} ${changeLabel(r)}<small>${esc(catOf(r))} · since ${dayLong(r.first)}</small></span>
     <span class="num">${fmt2(r.amount)}<small>${r.period === "monthly" ? "a month" : "a year"}</small></span>
-    <span class="rec-next">${r.next ? `next ~${dayShort(r.next)}` : `last ${dayShort(r.last)}`}</span>
+    <span class="rec-next">${r.next ? `next ~${dayShort(r.next)}` : `last ${dayShort(r.last)}`}</span>${hide(r)}
   </li>`;
   return `<div class="wrap narrow">
     <div class="month-head"><div>
       <div class="eyebrow">Recurring charges</div>
       <div class="total num">${fmt0(perMonth)}<span class="per">/mo</span></div>
       <div class="sub">${active.length} active charge${active.length === 1 ? "" : "s"}${active.some((r) => r.period === "yearly") ? ", yearly ones counted as 1/12 a month" : ""}</div>
-    </div></div>
-    ${changes.length ? `<h2 class="section">Changes lately</h2><ul class="recs">${changes.map((r) => `<li class="rec">
+    </div>${recurring.length ? `<button class="btn${editing ? " primary" : ""}" data-action="rec-edit">${editing ? "Done" : "Fix this list"}</button>` : ""}</div>
+    ${editing ? `<p class="hint">Tap Not recurring on anything that isn't a subscription or bill. It leaves this tab for good;
+      Import &amp; settings has a Put back button.</p>` : ""}
+    ${changes.length ? `<h2 class="section">Changes lately</h2><ul class="${list}">${changes.map((r) => `<li class="rec">
       <span class="rec-name">${esc(L.displayName(r.key))} ${changeLabel(r)}<small>${r.change ? `changed ${dayShort(r.change.date)}` : r.isNew ? `first charged ${dayShort(r.first)}` : `charged ${r.count} times`}</small></span>
-      <span class="num">${r.change ? `${fmt2(r.change.from)} → ${fmt2(r.change.to)}` : fmt2(r.amount)}</span><span class="rec-next"></span></li>`).join("")}</ul>` : ""}
+      <span class="num">${r.change ? `${fmt2(r.change.from)} → ${fmt2(r.change.to)}` : fmt2(r.amount)}</span><span class="rec-next"></span>${hide(r)}</li>`).join("")}</ul>` : ""}
     <h2 class="section">Active</h2>
-    ${active.length ? `<ul class="recs">${active.map(row).join("")}</ul>` : `<p class="muted">None found yet. It takes about 3 months of charges to spot one.</p>`}
-    ${stopped.length ? `<h2 class="section">Stopped in the last year</h2><ul class="recs">${stopped.map(row).join("")}</ul>` : ""}
+    ${active.length ? `<ul class="${list}">${active.map(row).join("")}</ul>` : `<p class="muted">None found yet. It takes about 3 months of charges to spot one.</p>`}
+    ${stopped.length ? `<h2 class="section">Stopped in the last year</h2><ul class="${list}">${stopped.map(row).join("")}</ul>` : ""}
     <p class="foot">A recurring charge is the same merchant charging the same amount about every month or year; a new price one cycle later
       counts as a price change. Bills that change every month, like power, aren't listed here; they're in Where it went.</p>
   </div>`;
@@ -366,6 +377,11 @@ function viewFiles() {
       <span>${esc(L.displayName(k))} → <b>${esc(catName(c))}</b></span>
       <button class="btn small" data-action="remove-rule" data-key="${esc(k)}">Remove</button></li>`).join("")}</ul>`
       : `<p class="muted">None yet. When you change a charge's category, the page remembers it for that merchant.</p>`}
+
+    ${db.notRecurring.length ? `<h2 class="section">Not recurring <span class="muted">(${db.notRecurring.length})</span></h2>
+    <ul class="rows">${[...db.notRecurring].sort().map((k) => `<li><span>${esc(L.displayName(k))}</span>
+      <button class="btn small" data-action="put-back" data-key="${esc(k)}">Put back</button></li>`).join("")}</ul>
+    <p class="muted">These merchants never show on Recurring. Their charges still count everywhere else.</p>` : ""}
 
     <h2 class="section">This device</h2>
     <p class="muted">Everything is saved in this browser only${db.txs.length ? ` (${db.txs.length.toLocaleString("en-US")} transactions)` : ""}. Your phone and laptop keep separate copies.
@@ -668,6 +684,7 @@ window.addEventListener("hashchange", () => {
   const v = location.hash.slice(1);
   ui.view = VIEWS.includes(v) ? v : "where";
   if (ui.view !== "files") ui.notes = [];
+  ui.recEdit = false;
   render();
   window.scrollTo(0, 0);
 });
@@ -684,7 +701,7 @@ document.addEventListener("click", (e) => {
   else if (a === "sample") loadSample();
   else if (a === "clear-sample") { clearData(); save(); refresh(); render(); }
   else if (a === "clear-all") {
-    if (confirm("Delete all imported transactions, rules and categories from this browser? This can't be undone.")) {
+    if (confirm("Delete all imported transactions, rules, categories and Not recurring choices from this browser? This can't be undone.")) {
       db = blank(); ui.notes = []; ui.month = null; save(); refresh(); render();
     }
   } else if (a === "remove-account") {
@@ -697,6 +714,11 @@ document.addEventListener("click", (e) => {
       save(); refresh(); render();
     }
   } else if (a === "remove-rule") { delete db.rules[el.dataset.key]; save(); refresh(); render(); }
+  else if (a === "rec-edit") { ui.recEdit = !ui.recEdit; render(); }
+  else if (a === "not-rec") {
+    if (!db.notRecurring.includes(el.dataset.key)) db.notRecurring.push(el.dataset.key);
+    save(); refresh(); render();
+  } else if (a === "put-back") { db.notRecurring = db.notRecurring.filter((k) => k !== el.dataset.key); save(); refresh(); render(); }
   else if (a === "all-account") { ui.all.account = el.dataset.account; ui.all.limit = PAGE; render(); }
   else if (a === "all-more") { ui.all.limit += PAGE; redrawAll(); }
   else if (a === "all-clear") { Object.assign(ui.all, { q: "", account: "", cat: "", limit: PAGE }); render(); }
