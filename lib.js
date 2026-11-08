@@ -256,7 +256,9 @@ export function classify({ desc, out, type }, accountType) {
 
 // ---------------------------------------------------------------- merchants
 
-const BANK_PREFIX = /^(POS PURCHASE|POS DEBIT|POS WITHDRAWAL|POINT OF SALE WITHDRAWAL|POINT OF SALE|POS|DEBIT CARD PURCHASE|DEBIT CARD WITHDRAWAL|DEBIT PURCHASE|VISA PURCHASE|CHECKCARD|CHECK CARD|DBT CRD|PURCHASE AUTHORIZED ON|RECURRING PAYMENT AUTHORIZED ON|RECURRING PAYMENT|PREAUTHORIZED DEBIT|ACH DEBIT|ACH WITHDRAWAL|ACH)\b\s*/;
+// APLPAY: Chase marks Apple Pay buys "APLPAY SUBWAY 1234", sometimes with a
+// processor after it ("APLPAY TST* …"); the loop below strips both.
+const BANK_PREFIX = /^(APLPAY|POS PURCHASE|POS DEBIT|POS WITHDRAWAL|POINT OF SALE WITHDRAWAL|POINT OF SALE|POS|DEBIT CARD PURCHASE|DEBIT CARD WITHDRAWAL|DEBIT PURCHASE|VISA PURCHASE|CHECKCARD|CHECK CARD|DBT CRD|PURCHASE AUTHORIZED ON|RECURRING PAYMENT AUTHORIZED ON|RECURRING PAYMENT|PREAUTHORIZED DEBIT|ACH DEBIT|ACH WITHDRAWAL|ACH)\b\s*/;
 const PROCESSOR = /^(SQ|TST|SP|PY|PP|PAYPAL|DD|IC|GOOGLE|GGL|FS|BT|CKE|LS|EB)\s?\*\s*/;
 const ALIASES = [
   [/^(AMAZON PRIME|PRIME VIDEO)/, "AMAZON PRIME"],
@@ -326,7 +328,7 @@ export function displayName(key) {
 // Starter rules: national chains only, so the public code says nothing about
 // where Rudy lives or shops. His own fixes are saved in his browser instead.
 const STARTER = [
-  [/^(NETFLIX|SPOTIFY|HULU|DISNEY PLUS|MAX|PEACOCK|PARAMOUNT|YOUTUBE|APPLE\.COM\/BILL|AUDIBLE|PATREON|AMAZON PRIME|SIRIUSXM|NYTIMES|ICLOUD|GOOGLE ONE|OPENAI|CHATGPT)\b/, "subs"],
+  [/^(NETFLIX|SPOTIFY|HULU|DISNEY PLUS|MAX|PEACOCK|ESPN|PARAMOUNT|YOUTUBE|APPLE\.COM\/BILL|AUDIBLE|PATREON|AMAZON PRIME|SIRIUSXM|NYTIMES|ICLOUD|GOOGLE ONE|OPENAI|CHATGPT)\b/, "subs"],
   [/^(UBER EATS|DOORDASH|GRUBHUB|STARBUCKS|DUNKIN|CHICK-FIL-A|MCDONALD'S|CHIPOTLE|TACO BELL|WENDY'?S|PANERA|SUBWAY|DOMINO'?S|PIZZA HUT|PAPA JOHN'?S|FIVE GUYS|SHAKE SHACK|SWEETGREEN|PANDA EXPRESS)\b/, "dining"],
   [/^(SHELL|EXXON|EXXONMOBIL|MOBIL|CHEVRON|BP|SUNOCO|CITGO|MARATHON|VALERO|SPEEDWAY|CIRCLE K|RACETRAC|QUIKTRIP|JIFFY LUBE|AUTOZONE|ADVANCE AUTO|GEICO|PROGRESSIVE)\b/, "car"],
   [/^(ALDI|TRADER JOE'?S?|WHOLE FOODS|KROGER|SAFEWAY|PUBLIX|INSTACART)\b/, "groceries"],
@@ -545,10 +547,22 @@ const fits = (gap, period) => period === "monthly" ? gap >= 20 && gap <= 40
   : (gap >= 20 && gap <= 40) || (gap >= 330 && gap <= 400);
 const periodOf = (gap) => (gap <= 40 ? "monthly" : "yearly");
 
+// How much proof a series needs depends on its category (Rudy's call). Bills
+// and subscriptions really do repeat, so two charges a cycle apart are enough.
+// Everyday places repeat by chance (a $40 fill-up a month apart), so those need
+// four charges at a steady price. Everything else needs three.
+const LENIENT = new Set(["subs", "bills", "housing", "health"]);
+const EVERYDAY = new Set(["groceries", "dining", "car", "shopping", "fun"]);
+function mostCommon(values) {
+  const n = new Map();
+  for (const v of values) n.set(v, (n.get(v) ?? 0) + 1);
+  return [...n].sort((a, b) => b[1] - a[1])[0]?.[0];
+}
+
 // A subscription is the same merchant charging the same amount about every
 // month (or year). Price changes are joined back on: if Netflix's $15.49
 // charges stop and $17.99 charges start one cycle later, that's one series.
-// charges: [{ key, date, amt, account }] with amt > 0. accountEnd: account → last date.
+// charges: [{ key, date, amt, account, cat }] with amt > 0. accountEnd: account → last date.
 export function findRecurring(charges, accountEnd) {
   const byKey = new Map();
   for (const c of [...charges].sort((a, b) => a.date.localeCompare(b.date))) {
@@ -570,17 +584,22 @@ export function findRecurring(charges, accountEnd) {
       } else chains.push({ items: [c], period: null, changes: [] });
     }
     // 2. Join price changes: an established chain (3+ charges) ends, a chain at a different
-    // price (within ±50%) starts one cycle later.
+    // price (within ±50%) starts one cycle later. A bill or subscription may do this
+    // after a single charge (a phone bill that went up $2), but only by 10% or less.
     chains.sort((a, b) => a.items[0].date.localeCompare(b.items[0].date));
     for (let i = 0; i < chains.length; i++) {
       const a = chains[i];
-      if (!a || a.items.length < 3 || !a.period) continue;
+      if (!a) continue;
+      const young = a.items.length < 3 || !a.period;
+      if (young && !LENIENT.has(mostCommon(a.items.map((x) => x.cat)))) continue;
       for (let j = i + 1; j < chains.length; j++) {
         const b = chains[j];
-        if (!b || (b.period && b.period !== a.period)) continue;
+        if (!b || (a.period && b.period && b.period !== a.period)) continue;
         const aLast = a.items[a.items.length - 1], bFirst = b.items[0];
-        const ratio = bFirst.amt / aLast.amt;
-        if (fits(daysBetween(aLast.date, bFirst.date), a.period) && ratio >= 0.5 && ratio <= 1.5) {
+        const ratio = bFirst.amt / aLast.amt, gap = daysBetween(aLast.date, bFirst.date);
+        const near = young ? ratio >= 0.9 && ratio <= 1.1 : ratio >= 0.5 && ratio <= 1.5;
+        if (fits(gap, a.period ?? b.period) && near) {
+          a.period ??= b.period ?? periodOf(gap);
           a.changes.push({ date: bFirst.date, from: aLast.amt, to: bFirst.amt }, ...b.changes);
           a.items.push(...b.items);
           chains[j] = null;
@@ -598,9 +617,26 @@ export function findRecurring(charges, accountEnd) {
       // (Apple bills several subscriptions under one name).
       const exact = items.every((x) => x.amt === first.amt);
       const inSpan = list.filter((x) => x.date >= first.date && x.date <= last.date).length;
-      if (!exact && items.length / inSpan < 0.6) continue;
-      if (period === "monthly" && items.length < 3 && !(items.length === 2 && exact)) continue;
-      if (period === "yearly" && !exact && items.length < 3) continue;
+      const mostly = items.length / inSpan >= 0.6;
+      const cat = mostCommon(items.map((x) => x.cat));
+      if (LENIENT.has(cat)) {
+        // Two charges are enough. But a power bill or a pharmacy can line up two
+        // near amounts by chance, so a 2-charge series whose price moved counts
+        // only when it's everything that merchant ever charged (a new phone plan).
+        // Longer ones whose amounts moved must be most of the merchant's charges;
+        // exact ones needn't (Apple bills several subscriptions under one name).
+        if (!exact && (items.length < 3 ? items.length < list.length : !mostly)) continue;
+      } else if (EVERYDAY.has(cat)) {
+        // Steady = the same amount each time, apart from a price change joined above
+        // (car insurance renewing). Weekly shoppers can line up same-amount chains,
+        // so "mostly" holds here even for exact amounts.
+        const steady = items.every((x, i) => i === 0 || x.amt === items[i - 1].amt
+          || ch.changes.some((c) => c.date === x.date));
+        if (!steady || items.length < 4 || !mostly) continue;
+      } else {
+        if (!exact && !mostly) continue;
+        if (items.length < 3) continue;
+      }
       const end = accountEnd[last.account] ?? last.date;
       const cycle = period === "monthly" ? 30 : 365;
       const stopped = daysBetween(last.date, end) > cycle + (period === "monthly" ? 12 : 30);

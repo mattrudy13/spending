@@ -117,13 +117,13 @@ test("re-importing an overlapping file adds only the new rows", () => {
 });
 
 test("recurring: price change joined, new and stopped found", () => {
-  const ch = (key, date, amt) => ({ key, date, amt, account: "A" });
+  const ch = (key, date, amt, cat = "subs") => ({ key, date, amt, account: "A", cat });
   const charges = [
     ch("NETFLIX", "2026-05-02", 1549), ch("NETFLIX", "2026-06-02", 1549), ch("NETFLIX", "2026-07-02", 1549),
     ch("NETFLIX", "2026-08-02", 1549), ch("NETFLIX", "2026-09-02", 1799), ch("NETFLIX", "2026-10-02", 1799),
     ch("MAX", "2026-09-12", 1699), ch("MAX", "2026-10-12", 1699),
     ch("HULU", "2026-05-14", 999), ch("HULU", "2026-06-14", 999), ch("HULU", "2026-07-14", 999), ch("HULU", "2026-08-14", 999),
-    ch("LUNCH SPOT", "2026-09-01", 1240), ch("LUNCH SPOT", "2026-10-01", 1310),
+    ch("LUNCH SPOT", "2026-09-01", 1240, "dining"), ch("LUNCH SPOT", "2026-10-01", 1310, "dining"),
   ];
   const found = findRecurring(charges, { A: "2026-10-30" });
   const by = Object.fromEntries(found.map((f) => [f.key, f]));
@@ -133,6 +133,33 @@ test("recurring: price change joined, new and stopped found", () => {
   assert.equal(by.MAX.isNew, true);
   assert.equal(by.HULU.status, "stopped");
   assert.equal(by["LUNCH SPOT"], undefined);
+});
+
+test("recurring: proof needed depends on the category", () => {
+  const ch = (key, date, amt, cat) => ({ key, date, amt, account: "A", cat });
+  const months = (key, amts, cat, day = "05") => amts.map((a, i) => ch(key, `2026-${String(i + 5).padStart(2, "0")}-${day}`, a, cat));
+  const charges = [
+    ...months("PHONE CO", [4500, 4720], "bills"),                 // lenient: 2 charges, price moved a bit → in
+    ...months("GAS PLACE", [4000, 4000, 4000], "car"),            // everyday: only 3 → out
+    ...months("CAR INSURER", [9100, 9100, 9100, 9800, 9800], "car", "20"), // everyday, steady with a price change → in
+    ...months("PHARMACY", [1200, 1300], "health", "08"),            // lenient but 8% apart and…
+    ch("PHARMACY", "2026-05-20", 2210, "health"), ch("PHARMACY", "2026-06-22", 640, "health"), // …mostly other visits → out
+    ...months("BURGER BAR", [1257, 1257], "dining", "10"),         // everyday, 2 exact → out
+    ...months("MYSTERY LLC", [1099, 1099], "other"),               // other: 2 → out
+    ...months("CLUB DUES", [2500, 2500, 2500], "other", "12"),     // other: 3 → in
+  ];
+  // A weekly shop with the same total every time: exact, but the chain is a
+  // quarter of what that store charged, so it isn't a subscription.
+  for (let d = Date.parse("2026-05-01"); d < Date.parse("2026-10-01"); d += 7 * 86400000)
+    charges.push(ch("CORNER MARKET", new Date(d).toISOString().slice(0, 10), 2500, "groceries"));
+  const keys = findRecurring(charges, { A: "2026-10-30" }).map((f) => f.key).sort();
+  assert.deepEqual(keys, ["CAR INSURER", "CLUB DUES", "PHONE CO"]);
+});
+
+test("Apple Pay prefix is stripped", () => {
+  assert.equal(merchantKey("APLPAY SUBWAY 12345"), "SUBWAY");
+  assert.equal(merchantKey("APLPAY TST* LUNCH SPOT"), "LUNCH SPOT");
+  assert.equal(merchantKey("ESPN PLUS"), "ESPN PLUS");
 });
 
 test("usual month needs full months from every account", () => {

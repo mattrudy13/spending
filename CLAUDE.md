@@ -21,6 +21,8 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
   https://claude.ai/artifact/696yDfi7XpsLkqsGkXKQSc), filters inline. Loads 200 rows at a time.
 - **v0.6** (2026-11-07): Interest and Sportsbooks categories (Rudy asked). Saved data gets them once via
   `addNewCategories` (`db.added` remembers which were offered, so a deleted one stays gone).
+- **v0.7** (2026-11-07): Recurring needs proof by category (Rudy's real list was mostly restaurants and
+  2-charge pairs). Strips Chase's "APLPAY" (Apple Pay) prefix; ESPN joins the subscription starters.
 
 ## Rudy's choices (ask before changing)
 
@@ -69,9 +71,14 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
 - **Layouts per account:** `db.layouts` maps account name → layout (`chase-card`, `amex`, `custom`…). Data saved
   before v0.2 has none; `OLD_LAYOUTS` in `lib.js` treats the old default names ("Chase card" etc.) as theirs.
 - **Recurring** (`findRecurring`): same merchant, amount within 1% (min 10¢), every 20–40 days (monthly) or
-  330–400 (yearly). Monthly needs 3 charges, or 2 of the exact same amount. A new price one cycle after a 3+ charge
-  series is a price change. The series must be ≥60% of that merchant's charges over its span unless every amount is
-  identical, which keeps weekly grocery trips out. Stopped = no charge for a cycle + 12 days (yearly: + 30) before
+  330–400 (yearly). A new price one cycle after a 3+ charge series is a price change. How much proof depends on the
+  series' most common category (Rudy's choice, v0.7):
+  - Subscriptions, Bills & utilities, Housing, Health (`LENIENT`): 2 charges. They may also join a price change
+    after 1 charge if it moved ≤10%, but a 2-charge series whose price moved counts only if it's the merchant's
+    whole history (else power bills and pharmacies pair up by chance).
+  - Groceries, Dining, Gas & car, Shopping, Fun (`EVERYDAY`): 4+ charges at a steady price (joined price changes
+    allowed, for car insurance) and ≥60% of the merchant's charges over its span, even when exact.
+  - Everything else: 3 charges, and ≥60% of the merchant's charges unless every amount is identical. Stopped = no charge for a cycle + 12 days (yearly: + 30) before
   that account's last date. Variable bills (power) aren't recurring by design.
 - The page opens on the latest month unless the data ends before the 20th, then the month before.
 
