@@ -251,7 +251,6 @@ const PAYMENT_TO_CARD = new RegExp([
 // On the card side, a credit with any payment wording is the bill being paid.
 const PAYMENT_ON_CARD = /payment.{0,20}thank you|autopay|auto pay|automatic payment|online payment|mobile payment|payment received|epayment/i;
 const TRANSFER = /\btransfer\b|\bxfer\b|\bto (savings|checking)\b|\bfrom (savings|checking)\b/i;
-
 export function classify({ desc, out, type }, accountType) {
   const t = (type || "").toLowerCase();
   if (accountType === "card") {
@@ -397,14 +396,25 @@ export function issuerCategory(raw) {
 // Order: a fix on this one row, his rule for the merchant, the starter list,
 // the bank's own category, then Other.
 export function categorize(tx, key, db) {
-  const own = db.overrides?.[tx.id] ?? db.rules?.[key];
-  if (own && (own === NOT_SPENDING || db.categories.some((c) => c.id === own))) return { cat: own, mine: true };
-  if (tx.kind === "payment" || tx.kind === "transfer" || tx.kind === "income") return { cat: NOT_SPENDING, mine: false };
-  const cat = starterCategory(key) ?? issuerCategory(tx.issuerCat) ?? "other";
+  const valid = (id) => id && (id === NOT_SPENDING || db.categories.some((c) => c.id === id));
+  // A fix on this one row always wins, whatever kind of row it is.
+  const row = db.overrides?.[tx.id];
+  if (valid(row)) return { cat: row, mine: true };
+  // A merchant rule is made from a charge, so it only moves charges and refunds.
+  // Money in, card payments and transfers stay out of spending (a Zelle rule for
+  // rent mustn't turn a roommate paying you back into negative Housing), unless
+  // the rule says "Not spending", which is safe either way.
+  const off = tx.kind === "payment" || tx.kind === "transfer" || tx.kind === "income";
+  const rule = db.rules?.[key];
+  let cat, mine = false;
+  if (valid(rule) && (!off || rule === NOT_SPENDING)) { cat = rule; mine = true; }
+  else if (off) return { cat: NOT_SPENDING, mine: false };
+  else cat = starterCategory(key) ?? issuerCategory(tx.issuerCat) ?? "other";
   // Rudy's call: Sportsbooks counts deposits only. Winnings credited to a card
   // are money in, like winnings paid to checking, not a refund off the category.
+  // Checked after his rules too, or re-saving a DraftKings rule would let winnings count.
   if (cat === "sportsbooks" && tx.kind === "refund") return { cat: NOT_SPENDING, mine: false };
-  return { cat: db.categories.some((c) => c.id === cat) ? cat : "other", mine: false };
+  return { cat: mine || db.categories.some((c) => c.id === cat) ? cat : "other", mine };
 }
 
 // ---------------------------------------------------------------- months

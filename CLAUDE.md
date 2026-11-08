@@ -34,7 +34,13 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
   biggest merchants over the last 6 months, with search over all of them (mockups:
   https://claude.ai/artifact/8LrjWjQzHYPLqGqRCtz6pp, way 1 picked). A tracked merchant gets a button under
   "Merchants you track": bar chart, typical month, and Month | Spent | Orders | Avg order. DashPass is its own
-  merchant (a subscription), so DoorDash counts food orders only.
+  merchant (a subscription), so DoorDash counts food orders only. Values above the Trends bars on desktop
+  ("$212", "$1.6k"); the typical line was ~10% too high before and now matches the bars.
+- **v0.11** (2026-11-07), from a review Rudy asked for: merchant rules only move charges and refunds (money in,
+  card payments and transfers need a one-row fix), and Sportsbooks' deposits-only check runs after rules too,
+  so re-saving a DraftKings rule can't let winnings count. A tracked merchant's typical starts at its first
+  charge. Fonts are served from `fonts/`, so the page makes no outside request. Left alone on purpose: refunds
+  to the debit card count as money in (Rudy has never had one, so there's no wording to match).
 
 ## Rudy's choices (ask before changing)
 
@@ -73,7 +79,9 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
 - **Refunds** (card credits that aren't payments) come off their category.
 - **Category order:** Rudy's fix on that one row → his rule for the merchant → starter list (`STARTER`, then
   `STARTER_WORDS` like RENT/POWER/INTERNET) → the bank's category (`ISSUER` map) → Other. Changing a charge in the
-  app saves a rule for that merchant by default ("Use this for every X charge").
+  app saves a rule for that merchant by default ("Use this for every X charge"). A merchant rule skips money in,
+  card payments and transfers unless it's "Not spending"; those rows are fixed one at a time (the box drops the
+  checkbox for them).
 - **Merchant key** (`merchantKey`): strips bank prefixes (POS PURCHASE…), processor prefixes (SQ *, TST*), store
   numbers and cities, Amex's padded city column, and a trailing state code; a few aliases (AMZN → AMAZON).
 - **Usual** = median of the last 6 *full* months before the selected one; needs 3. A month is full only if every
@@ -109,6 +117,8 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
 - `tests/lib.test.mjs`: `npm test` (Node's built-in runner, no packages).
 - `manifest.webmanifest`, `favicon.svg`, `apple-touch-icon.png` (180, full-bleed; iOS rounds it), `icon-192/512.png`:
   bars-and-tick icon. The PNGs were rendered from the SVG with headless Chrome; redraw them if the SVG changes.
+- `fonts/`: IBM Plex Sans 400–700 and Mono 400–600, Latin woff2 from @fontsource 5.1.1 (`OFL.txt`). The CSP's
+  `font-src 'self'` means a Google Fonts link would now be blocked; add weights here instead.
 - `.claude/launch.json`: `python3 -m http.server 8772`. Watch the port-8765 cache trap if previewing from the
   GitHub folder root (other sites also have `style.css`).
 

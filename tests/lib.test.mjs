@@ -203,6 +203,25 @@ test("one merchant by month, and the biggest merchants", () => {
   assert.equal(top[0].count, 3);
 });
 
+test("merchant rules move charges, not money in; winnings never count", () => {
+  const db = db0();
+  const row = (id, kind, out = -50000) => ({ id, kind, out, desc: "x", issuerCat: "" });
+  // Re-saving a sportsbook rule mustn't let winnings count, on checking or on a card.
+  db.rules = { DRAFTKINGS: "sportsbooks", "STATE LOTTERY": "fun", ZELLE: "housing", VENMO: NOT_SPENDING };
+  assert.equal(categorize(row("w1", "income"), "DRAFTKINGS", db).cat, NOT_SPENDING);
+  assert.equal(categorize(row("w2", "refund"), "DRAFTKINGS", db).cat, NOT_SPENDING);
+  assert.equal(categorize(row("d1", "spend", 2000), "DRAFTKINGS", db).cat, "sportsbooks");
+  // A rule to another category is his call: lottery prizes then come off Fun like a refund.
+  assert.equal(categorize(row("l1", "refund"), "STATE LOTTERY", db).cat, "fun");
+  // A Zelle rule for rent moves Zelle payments out, not a roommate's money in.
+  assert.equal(categorize(row("z1", "spend", 60000), "ZELLE", db).cat, "housing");
+  assert.deepEqual(categorize(row("z3", "income"), "ZELLE", db), { cat: NOT_SPENDING, mine: false });
+  // "Not spending" rules still apply to anything, and a fix on one row always wins.
+  assert.deepEqual(categorize(row("v1", "income"), "VENMO", db), { cat: NOT_SPENDING, mine: true });
+  db.overrides = { z4: "housing" };
+  assert.deepEqual(categorize(row("z4", "income"), "ZELLE", db), { cat: "housing", mine: true });
+});
+
 test("usual month needs full months from every account", () => {
   const ranges = accountRanges([
     { account: "card", date: "2026-01-02" }, { account: "card", date: "2026-10-30" },

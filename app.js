@@ -331,7 +331,10 @@ function viewTrends() {
     return !b ? 0 : cat === "all" ? b.total : b.cats.get(cat) ?? 0;
   };
   const orders = (m) => mm.get(m)?.orders ?? 0;
-  const fullMonths = months.filter((m) => stats.full.has(m));
+  // A merchant's typical starts at its first charge: months before you'd ever
+  // used it would count as $0 and drag the typical down.
+  const since = mm ? [...mm.keys()].sort()[0] ?? "" : "";
+  const fullMonths = months.filter((m) => stats.full.has(m) && m >= since);
   const fullVals = fullMonths.map(value);
   const typical = L.median(fullVals);
   const max = Math.max(1, ...months.map(value), typical ?? 0);
@@ -737,12 +740,16 @@ function openFix(id) {
   const dlg = $("#fix-dialog");
   const name = L.displayName(r.key);
   const others = stats.rows.filter((x) => x.key === r.key).length - 1;
+  // Merchant rules only move charges and refunds (see categorize), so money in,
+  // card payments and transfers are fixed one row at a time.
+  const off = ["payment", "transfer", "income"].includes(r.tx.kind);
   const btn = (cid, label) => `<button class="pick${r.cat === cid ? " on" : ""}" value="${cid}">${esc(label)}</button>`;
   dlg.innerHTML = `<form method="dialog" class="fix">
     <h2 id="fix-title">${esc(name)}</h2>
     <p class="muted">${dayLong(r.tx.date)} · ${esc(r.tx.account)} · <span class="num">${fmt2(r.tx.out)}</span><br>${esc(clean(r.tx.desc))}</p>
     <div class="picks">${db.categories.map((c) => btn(c.id, c.name)).join("")}${btn(L.NOT_SPENDING, "Not spending")}</div>
-    <label class="check"><input type="checkbox" name="all" ${others ? "checked" : ""}> Use this for every ${esc(name)} charge${others ? ` (${others} more)` : ""}</label>
+    ${off ? `<p class="muted fix-note">This is money in, a card payment or a transfer, so a change applies to this row only.</p>`
+      : `<label class="check"><input type="checkbox" name="all" ${others ? "checked" : ""}> Use this for every ${esc(name)} charge${others ? ` (${others} more)` : ""}</label>`}
     <div class="dlg-actions">
       ${r.mine ? `<button class="btn" value="reset">Back to automatic</button>` : ""}
       <button class="btn" value="">Cancel</button>
