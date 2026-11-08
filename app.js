@@ -9,8 +9,10 @@ const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const clean = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
 const sign = (c) => (c < 0 ? "−" : "");
-// Bar labels: "$212", "$1.6k". Up to 24 bars share the chart, so they stay short.
-const shortMoney = (c) => (c < 99950 ? `$${Math.round(c / 100)}` : `$${(c / 100000).toFixed(1).replace(/\.0$/, "")}k`);
+// Bar labels: "212", "1.6k", "12k". Up to 24 bars share a ~28px slot each and
+// "$4.9k" didn't fit (Rudy's call: drop the $; the table keeps it). 4 characters max.
+const shortMoney = (c) => (c < 99950 ? `${Math.round(c / 100)}`
+  : c < 999500 ? `${(c / 100000).toFixed(1).replace(/\.0$/, "")}k` : `${Math.round(c / 100000)}k`);
 const fmt0 = (c) => `${sign(c)}$${Math.round(Math.abs(c) / 100).toLocaleString("en-US")}`;
 const fmt2 = (c) => `${sign(c)}$${(Math.abs(c) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const plusMinus = (c) => (c > 0 ? "+" : c < 0 ? "−" : "") + `$${Math.round(Math.abs(c) / 100).toLocaleString("en-US")}`;
