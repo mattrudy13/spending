@@ -49,7 +49,7 @@ function load() {
 
 let db = load();
 let stats = null, recurring = null;
-const ui = { view: "where", month: null, open: null, trendCat: "all", notes: [], saveFailed: false, recEdit: false,
+const ui = { view: "where", month: null, open: null, trendCat: "all", trendRange: 24, notes: [], saveFailed: false, recEdit: false,
   all: { q: "", account: "", cat: "", sort: "date", showOff: true, limit: 200 } };
 
 if (scrubbed) queueMicrotask(save);
@@ -323,7 +323,14 @@ function viewTrends() {
   let cat = ui.trendCat;
   const merchant = cat.startsWith("m:") && db.tracked.includes(cat.slice(2)) ? cat.slice(2) : null;
   if (cat.startsWith("m:") && !merchant) cat = ui.trendCat = "all";
-  const months = stats.months.slice(-24);
+  // Range chips appear once there's more than 2 years; "5 years" only when it
+  // differs from "All". Past 24 bars the chart drops the $ labels and names
+  // years instead of months, so it still fits a phone without scrolling.
+  const ranges = [[24, "2 years"], [60, "5 years"], [Infinity, "All"]]
+    .filter(([n]) => n === 24 || stats.months.length > (n === 60 ? 60 : 24));
+  if (!ranges.some(([n]) => n === ui.trendRange)) ui.trendRange = 24;
+  const months = stats.months.slice(-ui.trendRange);
+  const dense = months.length > 24;
   const mm = merchant ? L.merchantMonths(stats.spend, merchant) : null;
   const value = (m) => {
     if (mm) return mm.get(m)?.spent ?? 0;
@@ -344,6 +351,11 @@ function viewTrends() {
   const merchantChips = db.tracked.map((k) => chip(`m:${k}`, L.displayName(k))).join("")
     + `<button class="chip add" data-action="track-pick">+ Track a merchant</button>`;
   const showLabel = (i) => months.length <= 13 || i % 3 === (months.length - 1) % 3;
+  const barLabel = (m, i) => dense ? (m.endsWith("-01") ? m.slice(0, 4) : "") : showLabel(i) ? MONTHS[+m.slice(5) - 1].slice(0, 3) : "";
+  const rangeChips = ranges.length > 1
+    ? `<div class="range" role="group" aria-label="Months shown">${ranges.map(([n, label]) =>
+      `<button class="link" data-action="trend-range" data-n="${n}" aria-pressed="${n === ui.trendRange}">${label}</button>`).join("")}</div>`
+    : "";
   const title = merchant ? L.displayName(merchant) : cat === "all" ? "All spending" : catName(cat);
 
   let sub = `median of ${fullVals.length} full month${fullVals.length === 1 ? "" : "s"} shown · lighter bars are months a file doesn't fully cover`;
@@ -382,12 +394,13 @@ function viewTrends() {
     <div class="chips">${catChips}</div>
     <h2 class="chip-label">Merchants you track</h2>
     <div class="chips">${merchantChips}</div>
-    <div class="trend" role="img" aria-label="Bar chart of monthly spending; the same numbers are in the table below.">
+    ${rangeChips}
+    <div class="trend${dense ? " dense" : ""}" role="img" aria-label="Bar chart of monthly spending; the same numbers are in the table below.">
       ${typical != null ? `<div class="typical" style="--p:${(typical / max).toFixed(4)}"><span>typical</span></div>` : ""}
       ${months.map((m, i) => `<button class="t-bar${stats.full.has(m) ? "" : " partial"}" data-action="goto-month" data-month="${m}"
           aria-label="${monthLong(m)}: ${fmt0(value(m))}"><span style="height:${Math.max(0.5, (Math.max(0, value(m)) / max) * 100).toFixed(1)}%">${
-          value(m) > 0 ? `<i class="t-val" aria-hidden="true">${shortMoney(value(m))}</i>` : ""}</span>
-          <em>${showLabel(i) ? MONTHS[+m.slice(5) - 1].slice(0, 3) : ""}</em></button>`).join("")}
+          value(m) > 0 && !dense ? `<i class="t-val" aria-hidden="true">${shortMoney(value(m))}</i>` : ""}</span>
+          <em>${barLabel(m, i)}</em></button>`).join("")}
     </div>
     ${table}
   </div>`;
@@ -791,6 +804,7 @@ document.addEventListener("click", (e) => {
   else if (a === "month" && el.dataset.month) { ui.month = el.dataset.month; ui.open = null; render(); }
   else if (a === "goto-month") { ui.month = el.dataset.month; ui.open = null; go("where"); }
   else if (a === "trend-cat") { ui.trendCat = el.dataset.cat; render(); }
+  else if (a === "trend-range") { ui.trendRange = Number(el.dataset.n); render(); }
   else if (a === "fix") openFix(el.dataset.id);
   else if (a === "sample") loadSample();
   else if (a === "clear-sample") { clearData(); save(); refresh(); render(); }

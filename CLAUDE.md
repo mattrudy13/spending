@@ -41,6 +41,11 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
   so re-saving a DraftKings rule can't let winnings count. A tracked merchant's typical starts at its first
   charge. Fonts are served from `fonts/`, so the page makes no outside request. Left alone on purpose: refunds
   to the debit card count as money in (Rudy has never had one, so there's no wording to match).
+- **v0.12** (2026-11-07): Trends can show more than 2 years (Rudy asked). "2 years · 5 years · All" appear above
+  the chart once the data runs past 24 months ("5 years" only past 60). Past 24 bars the chart drops the $ labels,
+  uses 1px gaps and labels only Januaries with the year, so it fits a phone without scrolling. Typical is the
+  median of the full months shown, so it follows the range (Rudy's choice). Storage is ~130–200 bytes a row,
+  roughly 300 KB a year, so years of history fit in localStorage.
 
 ## Rudy's choices (ask before changing)
 
@@ -58,7 +63,7 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
 - Accounts: checking at a bank he didn't name, not Chase (the column form handles it), two Chase cards and Amex.
   Cards are told apart by a name he picks on import, never by the account digits in Chase's file names.
 - Views: Where it went (month by category vs usual), recurring charges (price changes, new, stopped), trends over
-  months (by category, or a merchant he tracks: `db.tracked`, `ui.trendCat = "m:<key>"`), and All (every row,
+  months (by category, or a merchant he tracks: `db.tracked`, `ui.trendCat = "m:<key>"`; `ui.trendRange` = 24, 60 or Infinity months), and All (every row,
   searchable). **No budgets or targets.**
 - 14 starter categories (renamable, mergeable in the app): Housing, Bills & utilities, Groceries, Dining, Gas & car
   (car insurance too), Shopping, Subscriptions, Health, Travel, Fun, Gifts & giving, Interest, Sportsbooks, Other.

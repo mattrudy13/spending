@@ -194,6 +194,13 @@ button, input, select { font: inherit; color: inherit; }
 .chip-label { font-size: 12px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin: 18px 0 6px; }
 .trends .chips + .chip-label { margin-top: 12px; }
 .trends .trend { margin-top: 20px; }
+/* "2 years · 5 years · All": plain text buttons right above the chart. */
+.range { display: flex; justify-content: flex-end; gap: 4px; margin: 16px 0 -8px; }
+.range .link { min-height: 36px; padding: 4px 10px; border-radius: 18px; text-decoration: none; color: var(--muted); font-size: 14px; }
+.range .link[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+/* Past 24 months the bars are thin: 1px gaps, and only January gets a (year) label. */
+.trend.dense { gap: 1px; }
+.trend.dense .t-bar em { transform: none; left: 0; }
 .track input[type="search"] { width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--ink); border-radius: 4px; background: #fff; font-size: 16px; }
 .track-list { list-style: none; margin: 8px 0 0; padding: 0; max-height: min(50vh, 360px); overflow-y: auto; }
 .track-list li.muted { padding: 12px 0; font-size: 14px; }
