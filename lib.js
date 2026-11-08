@@ -197,6 +197,14 @@ function longestTextColumn(body, skip) {
 
 // Rows → transactions. Skips rows without a date or amount (summary lines,
 // pending holds with blank amounts).
+// Some banks print the card number, masked but for the last digits
+// ("XXXXXXXXXXXX1234"), inside the description. Rudy's rule: no account
+// numbers are stored, so it's cut before anything is saved. Only the masked
+// form is cut; amounts and store numbers stay as they were.
+export function scrubDesc(text) {
+  return String(text || "").replace(/\s*\bX{4,}\d{0,6}\b/gi, "").trim();
+}
+
 export function readRows(body, map) {
   const out = [];
   for (const r of body) {
@@ -206,8 +214,8 @@ export function readRows(body, map) {
     // Some banks put a generic word in Description (ACH WITHDRAWAL) and the
     // store or payee in another column (Memo). Name the row after that column
     // when it's filled, but look for card payments and transfers in both.
-    const main = (r[map.desc] || "").trim();
-    const detail = map.memo >= 0 ? (r[map.memo] || "").trim() : "";
+    const main = scrubDesc(r[map.desc]);
+    const detail = map.memo >= 0 ? scrubDesc(r[map.memo]) : "";
     const desc = detail || main;
     let amt;
     if (map.mode === "split") {
@@ -259,6 +267,10 @@ export function classify({ desc, out, type }, accountType) {
 // APLPAY: Chase marks Apple Pay buys "APLPAY SUBWAY 1234", sometimes with a
 // processor after it ("APLPAY TST* …"); the loop below strips both.
 const BANK_PREFIX = /^(APLPAY|POS PURCHASE|POS DEBIT|POS WITHDRAWAL|POINT OF SALE WITHDRAWAL|POINT OF SALE|POS|DEBIT CARD PURCHASE|DEBIT CARD WITHDRAWAL|DEBIT PURCHASE|VISA PURCHASE|CHECKCARD|CHECK CARD|DBT CRD|PURCHASE AUTHORIZED ON|RECURRING PAYMENT AUTHORIZED ON|RECURRING PAYMENT|PREAUTHORIZED DEBIT|ACH DEBIT|ACH WITHDRAWAL|ACH)\b\s*/;
+// Rudy's checking: "POS PURCHASE TERMINAL 12345678 GOOGLE *YOUTUBE TV …" and
+// "MERCHANT PURCHASE TERMINAL 12345678 SPOTIFY USA …". The terminal id is the
+// card reader's, not the store's.
+const TERMINAL = /^(MERCHANT PURCHASE\s+)?TERMINAL\s+\d+\s*/;
 const PROCESSOR = /^(SQ|TST|SP|PY|PP|PAYPAL|DD|IC|GOOGLE|GGL|FS|BT|CKE|LS|EB)\s?\*\s*/;
 const ALIASES = [
   [/^(AMAZON PRIME|PRIME VIDEO)/, "AMAZON PRIME"],
@@ -277,6 +289,7 @@ const ALIASES = [
   [/^HULU/, "HULU"],
   [/^DISNEY ?(PLUS|\+)/, "DISNEY PLUS"],
   [/^(HBO ?MAX|MAX\.COM)/, "MAX"],
+  [/^(GOOGLE \*?)?YOUTUBE ?TV/, "YOUTUBE TV"],
   [/^(GOOGLE \*?)?YOUTUBE/, "YOUTUBE"],
   [/^DOORDASH/, "DOORDASH"],
   [/^(WAL-?MART|WM SUPERCENTER)/, "WALMART"],
@@ -296,7 +309,7 @@ export function merchantKey(desc) {
   let s = String(desc || "").toUpperCase().trim();
   for (let i = 0; i < 3; i++) {
     const before = s;
-    s = s.replace(BANK_PREFIX, "").replace(/^([\d/-]+\s+)+/, "").replace(PROCESSOR, "");
+    s = s.replace(BANK_PREFIX, "").replace(TERMINAL, "").replace(/^([\d/-]+\s+)+/, "").replace(PROCESSOR, "");
     if (s === before) break;
   }
   for (const [re, key] of ALIASES) if (re.test(s)) return key;
@@ -317,7 +330,8 @@ export function merchantKey(desc) {
 const KEEP_UPPER = new Set(["AT&T", "CVS", "TJ", "BP", "AMC", "LLC", "USA", "UPS", "IKEA", "T-MOBILE"]);
 export function displayName(key) {
   if (key === "APPLE.COM/BILL") return "Apple (App Store/iCloud)";
-  const brand = { DRAFTKINGS: "DraftKings", FANDUEL: "FanDuel", BET365: "Bet365" }[key];
+  const brand = { DRAFTKINGS: "DraftKings", FANDUEL: "FanDuel", BET365: "Bet365", YOUTUBE: "YouTube",
+    "YOUTUBE TV": "YouTube TV", "MCDONALD'S": "McDonald's" }[key];
   if (brand) return brand;
   return key.split(" ").map((w) => KEEP_UPPER.has(w) ? w
     : w.toLowerCase().replace(/(^|[-'/&.])([a-z])/g, (_, p, c) => p + c.toUpperCase())).join(" ");
@@ -346,7 +360,7 @@ const STARTER_WORDS = [
   [/\b(POWER|ENERGY|ELECTRIC|WATER|SEWER|UTILITY|UTILITIES|INTERNET|BROADBAND|WIRELESS)\b/, "bills"],
   // Card interest: "PURCHASE INTEREST CHARGE", "INTEREST CHARGE ON PURCHASES".
   [/\bINTEREST CHARGE\b/, "interest"],
-  [/^(DRAFTKINGS|FANDUEL|BET365)$/, "sportsbooks"],
+  [/^(DRAFTKINGS|FANDUEL|BET365)$|\bLOTTERY\b/, "sportsbooks"], // lottery too (Rudy's call)
 ];
 
 export function starterCategory(key) {

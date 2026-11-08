@@ -26,6 +26,10 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
 - **v0.8** (2026-11-07): "Fix this list" on Recurring adds a "Not recurring" button to every row (Rudy picked
   option C: https://claude.ai/artifact/AMmK3azcZVVuCBJTkdUSPg). Hides that merchant from Recurring for good
   (`db.notRecurring`, merchant keys); Import & settings lists them with Put back.
+- **v0.9** (2026-11-07): checking's "POS PURCHASE TERMINAL 12345678 …" / "MERCHANT PURCHASE TERMINAL 12345678 …"
+  wording is stripped (every row was named "Terminal"); YouTube TV is its own merchant; LOTTERY goes to
+  Sportsbooks (Rudy's call). Masked card numbers ("XXXX…1234") are cut from row text on import and from saved
+  rows on load (`scrubDesc`).
 
 ## Rudy's choices (ask before changing)
 
@@ -34,7 +38,8 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
   `connect-src 'none'`, so even a bug can't send data. Don't add analytics, a backend, sync or any outside request.
 - localStorage is per origin, and all of Rudy's Pages sites share `mattrudy13.github.io`. Keep the `spending:` key
   prefix, and never let another site's code read it.
-- **No account numbers.** Never read, store or ask for them. Amex's "Account #" column is ignored on purpose.
+- **No account numbers.** Never read, store or ask for them. Amex's "Account #" column is ignored on purpose, and
+  masked card numbers inside a description are cut before saving (`scrubDesc`).
 - **Public repo, no data in it.** `.gitignore` blocks `*.csv` and other export formats. Test fixtures live inside
   `tests/lib.test.mjs` as strings, all made up. Starter merchant rules are national chains only: nothing that hints
   at where Rudy lives or shops. His own rules stay in his browser.
@@ -47,7 +52,7 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
   (car insurance too), Shopping, Subscriptions, Health, Travel, Fun, Gifts & giving, Interest, Sportsbooks, Other.
   A new starter category goes in `ADDED_CATEGORIES` too, or saved data never gets it.
 - Interest = card lines with "INTEREST CHARGE" (PURCHASE INTEREST CHARGE, INTEREST CHARGE ON …). Sportsbooks =
-  DraftKings, FanDuel, Bet365, and counts **deposits only**: winnings (to checking, or a credit on a card) are money
+  DraftKings, FanDuel, Bet365 and anything with LOTTERY, and counts **deposits only**: winnings (to checking, or a credit on a card) are money
   in, not a refund off the category, so a winning month can't make spending look low.
 - Real files are tested by Rudy at the end of v0.1 (agreed 2026-11-07); the importers were built from the banks'
   published layouts.
@@ -112,6 +117,8 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
   - Checking (column form): `Transaction Number, Date, Description, Memo, Amount Debit, Amount Credit, Balance,
     Check Number`. Both amount columns match /amount/, so `guessMapping` prefers split debit/credit when both exist
     (before v0.3 it guessed one column, Amount Debit, and lost every credit).
+  - Checking Memo for card buys: "POS PURCHASE TERMINAL <id> <store> <city> <ST> XXXX…<last4> <date> <time>" or
+    "MERCHANT PURCHASE TERMINAL <id> …". The masked card number is cut (`scrubDesc`).
   - Checking wording: Description is always generic (ACH WITHDRAWAL, POS/debit-card wording, deposit wording) and
     the payee is always in Memo. Card payments read ACH WITHDRAWAL + "CHASE CREDIT CRD…" or "AMEX EPAYMENT…" in
     Memo. Before v0.4 only Description was read, so those payments counted as spending.

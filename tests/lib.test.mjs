@@ -6,7 +6,7 @@ import {
   parseCsv, parseAmount, parseDate, splitHeader, detectFormat, guessMapping, readRows,
   merchantKey, categorize, issuerCategory, mergeTransactions, findRecurring, buildStats,
   usualFor, isFullMonth, accountRanges, DEFAULT_CATEGORIES, NOT_SPENDING, median,
-  sameLayoutAccounts, likelyAccount, filterRows, addNewCategories,
+  sameLayoutAccounts, likelyAccount, filterRows, addNewCategories, scrubDesc,
 } from "../lib.js";
 
 const CHASE = `Transaction Date,Post Date,Description,Category,Type,Amount,Memo
@@ -160,6 +160,28 @@ test("Apple Pay prefix is stripped", () => {
   assert.equal(merchantKey("APLPAY SUBWAY 12345"), "SUBWAY");
   assert.equal(merchantKey("APLPAY TST* LUNCH SPOT"), "LUNCH SPOT");
   assert.equal(merchantKey("ESPN PLUS"), "ESPN PLUS");
+});
+
+test("checking terminal wording is stripped and card numbers cut", () => {
+  assert.equal(merchantKey("POS PURCHASE TERMINAL 11112222 GOOGLE *YOUTUBETV MOUNTAIN CA 10-29-26 6:35 PM"), "YOUTUBE TV");
+  assert.equal(merchantKey("POS PURCHASE TERMINAL 11112222 GOOGLE *YOUTUBE TV MOUNTAIN CA"), "YOUTUBE TV");
+  assert.equal(merchantKey("MERCHANT PURCHASE TERMINAL 33334444 Spotify USA New York NY"), "SPOTIFY");
+  assert.equal(merchantKey("MERCHANT PURCHASE TERMINAL 55556666 McDonalds 1234 ANYTOWN ST"), "MCDONALD'S");
+  assert.equal(merchantKey("MERCHANT PURCHASE TERMINAL 77778888 State Lottery 1234567 ANYTOWN"), "STATE LOTTERY");
+  assert.equal(merchantKey("TERMINAL BREWING CO"), "TERMINAL BREWING"); // CO reads as a state // a store named Terminal keeps its name
+  assert.equal(scrubDesc("MERCHANT PURCHASE TERMINAL 1 Spotify USA XXXXXXXXXXXX0000 10-28-26 12:00 AM"),
+    "MERCHANT PURCHASE TERMINAL 1 Spotify USA 10-28-26 12:00 AM");
+  const db = db0();
+  const lotto = { id: "a", kind: "spend", desc: "x", issuerCat: "" };
+  assert.equal(categorize(lotto, "STATE LOTTERY", db).cat, "sportsbooks");
+  assert.equal(categorize({ ...lotto, kind: "refund" }, "STATE LOTTERY", db).cat, NOT_SPENDING);
+
+  const bank = parseCsv(`Transaction Number,Date,Description,Memo,Amount Debit,Amount Credit,Balance,Check Number
+1,10/28/2026,POS PURCHASE,MERCHANT PURCHASE TERMINAL 1 Spotify USA XXXXXXXXXXXX0000 10-28-26,-12.99,,100.00,
+`);
+  const map = guessMapping(bank[0], bank.slice(1));
+  const [row] = readRows(bank.slice(1), { ...map, account: "Checking", accountType: "bank" });
+  assert.ok(!/X{4}/.test(row.desc));
 });
 
 test("usual month needs full months from every account", () => {

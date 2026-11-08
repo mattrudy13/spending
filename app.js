@@ -27,11 +27,19 @@ const blank = () => ({
 
 });
 
+let scrubbed = false; // load() cleaned old rows; saved again once the page is set up
 function load() {
   try {
     const d = JSON.parse(localStorage.getItem(STORE));
     // Data saved before a starter category existed gets it added once.
-    if (d && d.version === 1) return L.addNewCategories({ ...blank(), ...d, added: d.added ?? [] });
+    // Rows saved before v0.9 may still hold a masked card number in their text.
+    if (d && d.version === 1) {
+      for (const t of d.txs ?? []) {
+        const clean = L.scrubDesc(t.desc);
+        if (clean !== t.desc) { t.desc = clean; scrubbed = true; }
+      }
+      return L.addNewCategories({ ...blank(), ...d, added: d.added ?? [] });
+    }
   } catch { /* private mode or bad data: start fresh */ }
   return blank();
 }
@@ -40,6 +48,8 @@ let db = load();
 let stats = null, recurring = null;
 const ui = { view: "where", month: null, open: null, trendCat: "all", notes: [], saveFailed: false, recEdit: false,
   all: { q: "", account: "", cat: "", sort: "date", showOff: true, limit: 200 } };
+
+if (scrubbed) queueMicrotask(save);
 
 function save() {
   try { localStorage.setItem(STORE, JSON.stringify(db)); ui.saveFailed = false; }
