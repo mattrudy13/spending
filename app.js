@@ -29,6 +29,7 @@ const blank = () => ({
   rules: {}, overrides: {}, mappings: {}, layouts: {}, added: [...L.ADDED_CATEGORIES], sample: false,
   notRecurring: [], // merchant keys Rudy marked "Not recurring"
   tracked: [], // merchant keys shown on Trends under "Merchants you track"
+  chartStart: null, chartStartManual: false, // "YYYY-MM" where Where it went and Trends begin
 
 });
 
@@ -62,6 +63,9 @@ function save() {
 }
 
 function refresh() {
+  // Set on the first load, then only moves earlier (see settleStart).
+  const start = L.settleStart(db.chartStart, db.chartStartManual, L.accountRanges(db.txs));
+  if (start !== db.chartStart) { db.chartStart = start; save(); }
   stats = L.buildStats(db);
   const ends = Object.fromEntries(Object.entries(stats.ranges).map(([a, r]) => [a, r.last]));
   // A merchant marked "Not recurring" is left out before the search, so none of
@@ -449,6 +453,26 @@ function openTrackPicker() {
 
 // -------- Files and settings
 
+// "Charts start": any month with data, newest first. Picking one fixes it there;
+// the link goes back to automatic (the first month every account covers).
+function chartStartSection(ranges) {
+  if (!ranges.length || !db.chartStart) return "";
+  const first = ranges.map(([, r]) => r.first).sort()[0], last = ranges.map(([, r]) => r.last).sort().at(-1);
+  const months = L.monthRange(L.monthOf(first), L.monthOf(last)).reverse();
+  if (months.length < 2) return "";
+  const auto = L.autoStart(stats.ranges);
+  return `<h2 class="section">Charts start</h2>
+    <p class="muted">Where it went and Trends begin in this month. Older rows stay saved and still show in All and Recurring.
+      An account whose file starts later counts as opened then.</p>
+    <div class="start-row">
+      <select data-action="chart-start" aria-label="Charts start">${months.map((m) =>
+        `<option value="${m}"${m === db.chartStart ? " selected" : ""}>${monthLong(m)}</option>`).join("")}</select>
+      ${auto && db.chartStart !== auto
+        ? `<button class="link" data-action="chart-auto">Use ${monthLong(auto)}, the first month every account covers</button>`
+        : `<span class="muted small-note">The first month every account covers.</span>`}
+    </div>`;
+}
+
 function viewFiles() {
   const ranges = Object.entries(stats.ranges);
   const ruleList = Object.entries(db.rules).sort((a, b) => a[0].localeCompare(b[0]));
@@ -468,6 +492,7 @@ function viewFiles() {
       <span><b>${esc(name)}</b><small>${r.count.toLocaleString("en-US")} rows · ${dayLong(r.first)} – ${dayLong(r.last)}</small></span>
       <button class="btn small" data-action="remove-account" data-account="${esc(name)}">Remove</button></li>`).join("")}</ul>`
       : `<p class="muted">No files loaded yet.</p>`}
+    ${chartStartSection(ranges)}
 
     <h2 class="section">Categories</h2>
     <p class="muted">Rename one by editing its name. Merging moves its charges and rules into another category.</p>
@@ -584,12 +609,22 @@ function redrawAll() { const el = $("#all-list"); if (el) el.innerHTML = allList
 async function importFiles(files) {
   const notes = [];
   if (db.sample) { clearData(); notes.push({ kind: "ok", text: "Removed the sample data first." }); }
+  const before = L.accountRanges(db.txs);
   for (const file of files) {
     try { notes.push(await importText(file.name, await file.text())); }
     catch (e) { notes.push({ kind: "bad", text: `${file.name}: couldn't read it (${e.message}).` }); }
   }
-  ui.notes = notes;
   save(); refresh();
+  // An account whose file starts after the chart start counts as opened then.
+  // Say so once, when it's loaded, in case it's really a short file.
+  const start = db.chartStart;
+  for (const acct of new Set(notes.map((n) => n.account).filter(Boolean))) {
+    const first = stats.ranges[acct]?.first;
+    if (before[acct]?.first === first) continue; // already said when it was loaded
+    if (start && first && L.daysBetween(`${start}-01`, first) > 6) notes.push({ kind: "warn",
+      text: `${acct} only goes back to ${dayLong(first)}, so charts treat it as opened then and still start in ${monthLong(start)}. If it's older, change "Charts start" below.` });
+  }
+  ui.notes = notes;
   go(db.txs.length && notes.some((n) => n.kind === "ok") && ui.view !== "files" ? ui.view : "files");
 }
 
@@ -616,7 +651,7 @@ async function importText(name, text, preset, sample = false) {
   const r = L.mergeTransactions(db.txs, txs);
   db.txs = r.txs;
   const dates = txs.map((t) => t.date).sort();
-  return { kind: "ok", text: `${map.account}: ${r.added} new, ${r.skipped} already loaded (${dayLong(dates[0])} – ${dayLong(dates[dates.length - 1])}).` };
+  return { kind: "ok", account: map.account, text: `${map.account}: ${r.added} new, ${r.skipped} already loaded (${dayLong(dates[0])} – ${dayLong(dates[dates.length - 1])}).` };
 }
 
 // The first file from an unknown bank: ask which column is which, with a live
@@ -807,6 +842,10 @@ document.addEventListener("click", (e) => {
   else if (a === "month" && el.dataset.month) { ui.month = el.dataset.month; ui.open = null; render(); }
   else if (a === "goto-month") { ui.month = el.dataset.month; ui.open = null; go("where"); }
   else if (a === "trend-cat") { ui.trendCat = el.dataset.cat; render(); }
+  else if (a === "chart-auto") {
+    db.chartStart = null; db.chartStartManual = false; ui.month = null;
+    save(); refresh(); render();
+  }
   else if (a === "trend-range") { ui.trendRange = Number(el.dataset.n); render(); }
   else if (a === "fix") openFix(el.dataset.id);
   else if (a === "sample") loadSample();
@@ -849,6 +888,10 @@ document.addEventListener("input", (e) => {
 document.addEventListener("change", (e) => {
   const el = e.target, a = el.dataset.action;
   if (a === "import" && el.files.length) importFiles([...el.files]);
+  else if (a === "chart-start") {
+    db.chartStart = el.value; db.chartStartManual = true; ui.month = null;
+    save(); refresh(); render();
+  }
   else if (a === "all-cat" || a === "all-sort" || a === "all-off") {
     if (a === "all-cat") ui.all.cat = el.value;
     else if (a === "all-sort") ui.all.sort = el.value;

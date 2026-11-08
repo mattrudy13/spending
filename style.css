@@ -265,6 +265,9 @@ button, input, select { font: inherit; color: inherit; }
 .cat-input { flex: 1; min-width: 0; min-height: 40px; padding: 6px 10px; border: 1px solid var(--line); background: #fff; border-radius: 4px; }
 .rows select { min-height: 40px; max-width: 46%; border: 1px solid var(--line); background: #fff; border-radius: 4px; padding: 6px; }
 .small-note { font-size: 13px; }
+.start-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 12px; }
+.start-row select { min-height: 44px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: #fff; font-size: 15px; }
+.start-row .link { text-align: left; }
 .add-cat { display: flex; gap: 8px; margin: 12px 0; }
 .add-cat input { flex: 1; min-width: 0; min-height: 40px; padding: 6px 10px; border: 1px solid var(--line); background: #fff; border-radius: 4px; }
 .files .danger { margin-bottom: 40px; }

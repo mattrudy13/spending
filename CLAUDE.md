@@ -48,7 +48,12 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
   roughly 300 KB a year, so years of history fit in localStorage.
 - **v0.13** (2026-11-07): on a computer, pointing at a bar in the 5-year/All chart shows "May 2024 · $3,262".
   A hover label on purpose: Rudy asked for it despite his no-tooltip rule, since there's no room for a label on
-  every bar. Phones skip it (the table has every month).
+  every bar. Phones skip it (the table has every month). Bar labels dropped the $ ("4.9k") so 24 fit.
+- **v0.14** (2026-11-07): charts start where every account has data (Rudy loads checking back years, cards only
+  ~2). Where it went and Trends begin at `db.chartStart`; All and Recurring keep every row (Rudy's choice). Set
+  on load from the latest first date (`autoStart`), then only moves earlier (`settleStart`), so a card opened
+  later doesn't hide history; it counts as opened then (a one-time import note says so). Import & settings has
+  "Charts start" (any month, `chartStartManual`) and a link back to automatic.
 
 ## Rudy's choices (ask before changing)
 
@@ -94,7 +99,8 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
   numbers and cities, Amex's padded city column, and a trailing state code; a few aliases (AMZN → AMAZON).
 - **Usual** = median of the last 6 *full* months before the selected one; needs 3. A month is full only if every
   account's file covers all of it (6 days slack at the start, 3 at the end), so a missing checking file (rent) can't
-  make a month look cheap. The total's usual is the median of monthly totals, not the sum of category medians.
+  make a month look cheap. An account whose first row is after the chart start counts as opened then, so it
+  doesn't make earlier months partial. The total's usual is the median of monthly totals, not the sum of category medians.
   Partial months show "so far" and no more/less verdict.
 - **Re-import** never doubles: rows are counted per (account, date, amount, description), so two real same-day
   coffees stay and an overlapping file only adds what's new.

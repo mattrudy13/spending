@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import {
   parseCsv, parseAmount, parseDate, splitHeader, detectFormat, guessMapping, readRows,
   merchantKey, categorize, issuerCategory, mergeTransactions, findRecurring, buildStats,
-  usualFor, isFullMonth, accountRanges, DEFAULT_CATEGORIES, NOT_SPENDING, median,
+  usualFor, isFullMonth, autoStart, settleStart, accountRanges, DEFAULT_CATEGORIES, NOT_SPENDING, median,
   sameLayoutAccounts, likelyAccount, filterRows, addNewCategories, scrubDesc, merchantMonths, topMerchants,
 } from "../lib.js";
 
@@ -239,6 +239,32 @@ test("usual month needs full months from every account", () => {
   const stats = buildStats(db);
   assert.equal(usualFor(stats, "2026-03"), null); // only 2 months before it
   assert.equal(usualFor(stats, "2026-05"), 25001); // median of Jan–Apr totals (10k, 20k, 30k, 40k)
+});
+
+// Checking goes back years, the cards only two: charts start where all cover.
+test("chart start: latest first month, moves earlier only, late accounts count as opened", () => {
+  const r = (bank, card) => accountRanges([
+    { account: "bank", date: bank }, { account: "bank", date: "2026-10-31" },
+    { account: "card", date: card }, { account: "card", date: "2026-10-30" },
+  ]);
+  assert.equal(autoStart(r("2016-01-04", "2024-03-05")), "2024-03"); // card starts in the first week
+  assert.equal(autoStart(r("2016-01-04", "2024-03-20")), "2024-04"); // mid-month: next month
+  assert.equal(autoStart({}), null);
+  assert.equal(settleStart(null, false, r("2016-01-04", "2024-03-20")), "2024-04");
+  assert.equal(settleStart("2024-04", false, r("2016-01-04", "2022-01-02")), "2022-01"); // older card file
+  const withNew = { ...r("2016-01-04", "2024-03-20"), newcard: { first: "2026-06-10", last: "2026-10-30", count: 2 } };
+  assert.equal(settleStart("2024-04", false, withNew), "2024-04"); // a new card doesn't hide history
+  assert.equal(settleStart("2025-01", true, r("2016-01-04", "2022-01-02")), "2025-01"); // picked by hand
+  assert.equal(isFullMonth("2025-02", withNew), false); // without a start, newcard is missing
+  assert.equal(isFullMonth("2025-02", withNew, "2024-04"), true); // with one, it wasn't open yet
+
+  const db = db0();
+  const add = (account, date) => db.txs.push({ id: account + date, account, date, out: 1000, desc: "X", kind: "spend", issuerCat: "" });
+  add("bank", "2016-01-04"); add("bank", "2026-10-31"); add("card", "2024-03-20"); add("card", "2026-10-30");
+  db.chartStart = "2024-04";
+  const stats = buildStats(db);
+  assert.equal(stats.months[0], "2024-04");
+  assert.equal(stats.rows.length, 4); // older rows are still there for All and Recurring
 });
 
 // Two Chase cards share one layout; the import asks which card a file is.

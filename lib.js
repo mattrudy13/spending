@@ -494,11 +494,33 @@ export function likelyAccount(choices, fileRows) {
 // A month only counts toward "usual" if every account's file covers all of it.
 // Otherwise a month missing the checking file (rent!) would look cheap and drag
 // the usual down. Small slack because the first charge is rarely on the 1st.
-export function isFullMonth(month, ranges) {
+// With a chart start, an account whose file begins after it counts as opened
+// then (a card Rudy got later), so months before its first row don't need it.
+export function isFullMonth(month, ranges, start = null) {
   const accts = Object.values(ranges);
   if (!accts.length) return false;
+  const late = (a) => start && daysBetween(`${start}-01`, a.first) > 6;
   return accts.every((a) =>
-    daysBetween(a.first, `${month}-01`) >= -6 && daysBetween(lastDayOf(month), a.last) >= -3);
+    (late(a) || daysBetween(a.first, `${month}-01`) >= -6) && daysBetween(lastDayOf(month), a.last) >= -3);
+}
+
+// Where Where it went and Trends begin (v0.14). Rudy loads checking back years
+// but the cards only as far as the banks allow, so by default the charts start
+// at the first month every account covers. Same 6-day slack as isFullMonth.
+export function autoStart(ranges) {
+  const latest = Object.values(ranges).map((r) => r.first).sort().at(-1);
+  if (!latest) return null;
+  return +latest.slice(8) <= 7 ? monthOf(latest) : addMonths(monthOf(latest), 1);
+}
+
+// The start only moves earlier on its own (older files loaded, or an account
+// removed). Moving later would mean a new account, and a card opened in 2027
+// shouldn't hide years of history: it counts as opened then instead. A month
+// Rudy picks in settings (manual) never moves.
+export function settleStart(start, manual, ranges) {
+  if (manual && start) return start;
+  const auto = autoStart(ranges);
+  return !start || (auto && auto < start) ? auto : start;
 }
 
 // Everything the month views need, in one pass over the transactions.
@@ -518,9 +540,12 @@ export function buildStats(db) {
     m.cats.set(r.cat, (m.cats.get(r.cat) ?? 0) + r.tx.out);
     byMonth.set(r.month, m);
   }
+  // Months before the chart start stay in rows (All, Recurring) but not in months.
   const all = rows.map((r) => r.month).sort();
-  const months = all.length ? monthRange(all[0], all[all.length - 1]) : [];
-  const full = new Set(months.filter((m) => isFullMonth(m, ranges)));
+  const last = all[all.length - 1];
+  const start = db.chartStart && db.chartStart <= last ? db.chartStart : null;
+  const months = all.length ? monthRange(start && start > all[0] ? start : all[0], last) : [];
+  const full = new Set(months.filter((m) => isFullMonth(m, ranges, start)));
   return { rows, spend, ranges, byMonth, months, full };
 }
 
