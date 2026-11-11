@@ -30,6 +30,7 @@ const blank = () => ({
   notRecurring: [], // merchant keys Rudy marked "Not recurring"
   tracked: [], // merchant keys shown on Trends under "Merchants you track"
   chartStart: null, chartStartManual: false, // "YYYY-MM" where Where it went and Trends begin
+  covered: {}, // account → day its newest file was downloaded: it covers up to then, charges or not
 
 });
 
@@ -67,7 +68,7 @@ function refresh() {
   const start = L.settleStart(db.chartStart, db.chartStartManual, L.accountRanges(db.txs));
   if (start !== db.chartStart) { db.chartStart = start; save(); }
   stats = L.buildStats(db);
-  const ends = Object.fromEntries(Object.entries(stats.ranges).map(([a, r]) => [a, r.last]));
+  const ends = Object.fromEntries(Object.entries(stats.ranges).map(([a, r]) => [a, r.end]));
   // A merchant marked "Not recurring" is left out before the search, so none of
   // its charges can form a series, now or after later imports.
   const hidden = new Set(db.notRecurring);
@@ -211,7 +212,7 @@ function viewWhere() {
 function coverage(month) {
   const r = Object.values(stats.ranges);
   const start = r.reduce((m, x) => (x.first > m ? x.first : m), `${month}-01`);
-  const end = r.reduce((m, x) => (x.last < m ? x.last : m), `${month}-31`);
+  const end = r.reduce((m, x) => (x.end < m ? x.end : m), `${month}-31`);
   if (start.slice(0, 7) !== month || end.slice(0, 7) !== month) return "not every file covers this month";
   if (start.slice(8) === "01") return `through ${dayShort(end)}`;
   return `${dayShort(start)} – ${dayShort(end)} only`;
@@ -489,7 +490,7 @@ function viewFiles() {
 
     <h2 class="section">Accounts</h2>
     ${ranges.length ? `<ul class="rows">${ranges.map(([name, r]) => `<li>
-      <span><b>${esc(name)}</b><small>${r.count.toLocaleString("en-US")} rows · ${dayLong(r.first)} – ${dayLong(r.last)}</small></span>
+      <span><b>${esc(name)}</b><small>${r.count.toLocaleString("en-US")} rows · ${dayLong(r.first)} – ${dayLong(r.last)}${r.end > r.last ? ` · up to date through ${dayLong(r.end)}` : ""}</small></span>
       <button class="btn small" data-action="remove-account" data-account="${esc(name)}">Remove</button></li>`).join("")}</ul>`
       : `<p class="muted">No files loaded yet.</p>`}
     ${chartStartSection(ranges)}
@@ -611,7 +612,7 @@ async function importFiles(files) {
   if (db.sample) { clearData(); notes.push({ kind: "ok", text: "Removed the sample data first." }); }
   const before = L.accountRanges(db.txs);
   for (const file of files) {
-    try { notes.push(await importText(file.name, await file.text())); }
+    try { notes.push(await importText(file.name, await file.text(), undefined, false, file.lastModified)); }
     catch (e) { notes.push({ kind: "bad", text: `${file.name}: couldn't read it (${e.message}).` }); }
   }
   save(); refresh();
@@ -628,7 +629,14 @@ async function importFiles(files) {
   go(db.txs.length && notes.some((n) => n.kind === "ok") && ui.view !== "files" ? ui.view : "files");
 }
 
-async function importText(name, text, preset, sample = false) {
+// The day a file was downloaded, in local time ("YYYY-MM-DD").
+function localDay(ms) {
+  const d = new Date(ms);
+  if (!ms || Number.isNaN(d.getTime())) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+async function importText(name, text, preset, sample = false, modified = 0) {
   const rows = L.parseCsv(text);
   if (rows.length < 2) return { kind: "bad", text: `${name}: no rows found. Is it a CSV export?` };
   const { headers, body } = L.splitHeader(rows);
@@ -650,8 +658,17 @@ async function importText(name, text, preset, sample = false) {
   db.layouts[map.account] = map.format;
   const r = L.mergeTransactions(db.txs, txs);
   db.txs = r.txs;
-  const dates = txs.map((t) => t.date).sort();
-  return { kind: "ok", account: map.account, text: `${map.account}: ${r.added} new, ${r.skipped} already loaded (${dayLong(dates[0])} – ${dayLong(dates[dates.length - 1])}).` };
+  const dates = txs.map((t) => t.date).sort(), fileLast = dates[dates.length - 1];
+  // The file with the account's newest rows says how far the account is covered:
+  // through the day it was downloaded, even if the last charge was weeks before
+  // (Rudy's choice). An older file loaded later doesn't move it.
+  const day = localDay(modified), acctLast = L.accountRanges(db.txs)[map.account].last;
+  let through = "";
+  if (day && fileLast === acctLast && day > fileLast) {
+    if (!(db.covered[map.account] > day)) db.covered[map.account] = day;
+    through = ` Counted as up to date through ${dayLong(db.covered[map.account])}, the day the file was downloaded.`;
+  }
+  return { kind: "ok", account: map.account, text: `${map.account}: ${r.added} new, ${r.skipped} already loaded (${dayLong(dates[0])} – ${fileLast ? dayLong(fileLast) : ""}).${through}` };
 }
 
 // The first file from an unknown bank: ask which column is which, with a live
@@ -712,6 +729,7 @@ function askMapping(fileName, headers, body) {
   preview();
   return new Promise((resolve) => {
     dlg.addEventListener("close", () => resolve(dlg.returnValue === "ok" ? read() : null), { once: true });
+    dlg.returnValue = ""; // it keeps the last file's "ok", and Escape doesn't clear it
     dlg.showModal();
   });
 }
@@ -762,6 +780,7 @@ function askCard(fileName, txs) {
   sync();
   return new Promise((resolve) => {
     dlg.addEventListener("close", () => resolve(dlg.returnValue === "ok" ? chosen().name : null), { once: true });
+    dlg.returnValue = ""; // it keeps the last file's "ok", and Escape doesn't clear it
     dlg.showModal();
     if (isNew()) input.focus();
   });
@@ -859,6 +878,7 @@ document.addEventListener("click", (e) => {
     if (confirm(`Remove every ${name} transaction from this browser? Your rules stay. If this page asked which column is which for it, it asks again next time.`)) {
       db.txs = db.txs.filter((t) => t.account !== name);
       delete db.layouts[name];
+      delete db.covered[name];
       // Forget its column answers too, so loading it again asks afresh.
       for (const [sig, m] of Object.entries(db.mappings)) if (m.account === name) delete db.mappings[sig];
       save(); refresh(); render();

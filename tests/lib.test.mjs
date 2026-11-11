@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   parseCsv, parseAmount, parseDate, splitHeader, detectFormat, guessMapping, readRows,
-  merchantKey, categorize, issuerCategory, mergeTransactions, findRecurring, buildStats,
+  merchantKey, categorize, classify, issuerCategory, mergeTransactions, findRecurring, buildStats,
   usualFor, isFullMonth, autoStart, settleStart, accountRanges, DEFAULT_CATEGORIES, NOT_SPENDING, median,
   sameLayoutAccounts, likelyAccount, filterRows, addNewCategories, scrubDesc, merchantMonths, topMerchants,
 } from "../lib.js";
@@ -374,4 +374,45 @@ test("addNewCategories adds new starters once, before Other, or adopts a same-na
     rules: { "SOME BANK": "c1" }, overrides: {} });
   assert.equal(own.categories.filter((c) => c.name.toLowerCase() === "interest").length, 1);
   assert.equal(own.rules["SOME BANK"], "interest");
+});
+
+test("the bank's specific category beats a bill word; chains need the whole name", () => {
+  const db = db0();
+  const cat = (desc, issuerCat = "") => categorize({ id: "x", desc, kind: "spend", issuerCat }, merchantKey(desc), db).cat;
+  assert.equal(cat("WATER STREET TAVERN", "Food & Drink"), "dining");
+  assert.equal(cat("POWER YOGA STUDIO", "Health & Wellness"), "health");
+  assert.equal(cat("ENTERPRISE RENT-A-CAR 1234"), "other"); // not Housing, even with no bank category
+  assert.equal(cat("ENTERPRISE RENT-A-CAR 1234", "Travel"), "travel");
+  // The bank's catch-alls don't overrule a bill word: Chase files rent under Home.
+  assert.equal(cat("RENT PAYMENT PORTAL", "Home"), "housing");
+  assert.equal(cat("CITY POWER CO", "Bills & Utilities"), "bills");
+  assert.equal(cat("CITY POWER CO"), "bills");
+  assert.equal(cat("DELTA DENTAL INS", "Health & Wellness"), "health");
+  assert.equal(cat("UNITED HEALTHCARE PREM"), "other");
+  assert.equal(cat("DELTA AIR 0062345678901", "Travel"), "travel");
+  assert.equal(cat("UNITED 0162345678901"), "travel");
+  assert.equal(cat("PURCHASE INTEREST CHARGE", "Fees & Adjustments"), "interest");
+});
+
+test("checking: only a whole-word Citi counts as a card payment", () => {
+  const kind = (desc) => classify({ desc, out: 5000, type: "" }, "bank");
+  assert.equal(kind("ACH WITHDRAWAL CITIZENS ENERGY PAYMENT"), "spend");
+  assert.equal(kind("ACH WITHDRAWAL CITI CARD ONLINE PAYMENT"), "transfer");
+  assert.equal(kind("ACH WITHDRAWAL CITIBANK PMT"), "transfer");
+});
+
+test("a file's download date covers days with no charges", () => {
+  const txs = [
+    { account: "card", date: "2026-01-02" }, { account: "card", date: "2026-10-31" },
+    { account: "quiet", date: "2026-01-03" }, { account: "quiet", date: "2026-07-12" },
+  ];
+  const bare = accountRanges(txs);
+  assert.equal(isFullMonth("2026-09", bare), false); // quiet card's last row is in July
+  const ranges = accountRanges(txs, { quiet: "2026-11-02" });
+  assert.equal(ranges.quiet.last, "2026-07-12");
+  assert.equal(ranges.quiet.end, "2026-11-02");
+  assert.equal(isFullMonth("2026-09", ranges), true);
+  assert.equal(isFullMonth("2026-10", ranges), true);
+  // A download date before the last row changes nothing.
+  assert.equal(accountRanges(txs, { card: "2026-06-01" }).card.end, "2026-10-31");
 });

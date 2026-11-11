@@ -54,6 +54,14 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
   on load from the latest first date (`autoStart`), then only moves earlier (`settleStart`), so a card opened
   later doesn't hide history; it counts as opened then (a one-time import note says so). Import & settings has
   "Charts start" (any month, `chartStartManual`) and a link back to automatic.
+- **v0.15** (2026-11-11), from a second review: an account is covered through the day its newest file was
+  downloaded (`db.covered`, from the file's modified date), so a card with no late-month charges, or one unused
+  for months, no longer leaves months "so far" (Rudy's choice over a per-account setting). Escape on the card or
+  column box skips the file (it used to import when an earlier file had been imported). The bank's specific
+  category beats a bill word (Water Street Tavern was Bills, Enterprise Rent-A-Car was Housing); DELTA, UNITED
+  and MAX must be the whole name. "CITIZENS … PAYMENT" on checking is no longer read as a Citi card payment.
+  Left alone on purpose: outgoing transfers stay out of spending and rules don't move them (Rudy pays no one
+  regularly by Zelle or transfer).
 
 ## Rudy's choices (ask before changing)
 
@@ -90,8 +98,10 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
   patterns, so "FIBER INTERNET AUTOPAY" stays a bill), transfers between own accounts, and money coming in to
   checking. Otherwise a card payment would be counted twice (once from checking, once on the card).
 - **Refunds** (card credits that aren't payments) come off their category.
-- **Category order:** Rudy's fix on that one row → his rule for the merchant → starter list (`STARTER`, then
-  `STARTER_WORDS` like RENT/POWER/INTERNET) → the bank's category (`ISSUER` map) → Other. Changing a charge in the
+- **Category order:** Rudy's fix on that one row → his rule for the merchant → starter chains (`STARTER`) and
+  sure wording (`STARTER_SURE`: interest, sportsbooks) → the bank's category (`ISSUER` map) when it's a specific
+  one → bill words (`STARTER_WORDS` like RENT/POWER/INTERNET) → the bank's Shopping or Bills (`VAGUE`: catch-alls,
+  Chase files rent under Home) → Other. Checking rows have no bank category, so bill words decide there. Changing a charge in the
   app saves a rule for that merchant by default ("Use this for every X charge"). A merchant rule skips money in,
   card payments and transfers unless it's "Not spending"; those rows are fixed one at a time (the box drops the
   checkbox for them).
@@ -99,7 +109,9 @@ https://claude.ai/artifact/HmLcoaU7rT4YQv2e9kigtu. Ideas for later: `ENHANCEMENT
   numbers and cities, Amex's padded city column, and a trailing state code; a few aliases (AMZN → AMAZON).
 - **Usual** = median of the last 6 *full* months before the selected one; needs 3. A month is full only if every
   account's file covers all of it (6 days slack at the start, 3 at the end), so a missing checking file (rent) can't
-  make a month look cheap. An account whose first row is after the chart start counts as opened then, so it
+  make a month look cheap. An account's files reach to its `end`: its last row, or the day its newest file was
+  downloaded if later (`db.covered`; only the file holding the account's newest rows sets it, and removing the
+  account forgets it). Recurring's "stopped" check uses the same end. An account whose first row is after the chart start counts as opened then, so it
   doesn't make earlier months partial. The total's usual is the median of monthly totals, not the sum of category medians.
   Partial months show "so far" and no more/less verdict.
 - **Re-import** never doubles: rows are counted per (account, date, amount, description), so two real same-day

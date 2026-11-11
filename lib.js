@@ -246,7 +246,9 @@ export function readRows(body, map) {
 const PAYMENT_TO_CARD = new RegExp([
   "credit crd", "crd epay", "card ?member serv", "american express.{0,20}(ach|pmt|payment)",
   "amex.{0,20}(ach|pmt|payment)", "chase.{0,20}(card|crd).{0,20}(pmt|payment|autopay)",
-  "capital one.{0,20}(pmt|payment)", "discover.{0,20}(pmt|payment)", "citi.{0,20}(pmt|payment)",
+  "capital one.{0,20}(pmt|payment)", "discover.{0,20}(pmt|payment)",
+  // Whole word: a bare "citi" also matched CITIZENS ENERGY PAYMENT, a real bill.
+  "\\bciti(bank|card)?\\b.{0,20}(pmt|payment)",
 ].join("|"), "i");
 // On the card side, a credit with any payment wording is the bill being paid.
 const PAYMENT_ON_CARD = /payment.{0,20}thank you|autopay|auto pay|automatic payment|online payment|mobile payment|payment received|epayment/i;
@@ -342,33 +344,51 @@ export function displayName(key) {
 
 // Starter rules: national chains only, so the public code says nothing about
 // where Rudy lives or shops. His own fixes are saved in his browser instead.
+// DELTA, UNITED and MAX only count as the whole name (or DELTA AIR…), so Delta
+// Dental and United Healthcare aren't Travel and "MAX & ERMAS" isn't a subscription.
 const STARTER = [
-  [/^(NETFLIX|SPOTIFY|HULU|DISNEY PLUS|MAX|PEACOCK|ESPN|PARAMOUNT|YOUTUBE|APPLE\.COM\/BILL|AUDIBLE|PATREON|AMAZON PRIME|SIRIUSXM|NYTIMES|ICLOUD|DASHPASS|GOOGLE ONE|OPENAI|CHATGPT)\b/, "subs"],
+  [/^(NETFLIX|SPOTIFY|HULU|DISNEY PLUS|MAX$|PEACOCK|ESPN|PARAMOUNT|YOUTUBE|APPLE\.COM\/BILL|AUDIBLE|PATREON|AMAZON PRIME|SIRIUSXM|NYTIMES|ICLOUD|DASHPASS|GOOGLE ONE|OPENAI|CHATGPT)\b/, "subs"],
   [/^(UBER EATS|DOORDASH|GRUBHUB|STARBUCKS|DUNKIN|CHICK-FIL-A|MCDONALD'S|CHIPOTLE|TACO BELL|WENDY'?S|PANERA|SUBWAY|DOMINO'?S|PIZZA HUT|PAPA JOHN'?S|FIVE GUYS|SHAKE SHACK|SWEETGREEN|PANDA EXPRESS)\b/, "dining"],
   [/^(SHELL|EXXON|EXXONMOBIL|MOBIL|CHEVRON|BP|SUNOCO|CITGO|MARATHON|VALERO|SPEEDWAY|CIRCLE K|RACETRAC|QUIKTRIP|JIFFY LUBE|AUTOZONE|ADVANCE AUTO|GEICO|PROGRESSIVE)\b/, "car"],
   [/^(ALDI|TRADER JOE'?S?|WHOLE FOODS|KROGER|SAFEWAY|PUBLIX|INSTACART)\b/, "groceries"],
   [/^(AMAZON|TARGET|WALMART|COSTCO|HOME DEPOT|LOWE'?S|BEST BUY|IKEA|ETSY|EBAY|TJ MAXX|TJMAXX|MARSHALLS|OLD NAVY|NIKE)\b/, "shopping"],
   [/^(CVS|WALGREENS|RITE AID|PLANET FITNESS|LA FITNESS)\b/, "health"],
-  [/^(UBER|LYFT|DELTA|AMERICAN AIR|UNITED|SOUTHWEST|JETBLUE|MARRIOTT|HILTON|HYATT|AIRBNB|EXPEDIA|HERTZ|AMTRAK)\b/, "travel"],
+  [/^(UBER|LYFT|DELTA$|DELTA AIR|AMERICAN AIR|UNITED$|UNITED AIR|SOUTHWEST|JETBLUE|MARRIOTT|HILTON|HYATT|AIRBNB|EXPEDIA|HERTZ|AMTRAK)\b/, "travel"],
   [/^(TICKETMASTER|STUBHUB|SEATGEEK|AMC|REGAL|STEAM|PLAYSTATION|XBOX|NINTENDO)\b/, "fun"],
   [/^(VERIZON|AT&T|T-MOBILE|COMCAST|XFINITY|SPECTRUM)\b/, "bills"],
 ];
 
-// Words that give a bill away wherever they sit in the name ("RENT PAYMENT
-// PORTAL", "CITY POWER CO"). Checked after the chain list above.
-const STARTER_WORDS = [
-  [/\b(RENT|APARTMENTS?|PROPERTY MGMT|PROPERTY MANAGEMENT|LEASING|RENTERS INS)\b/, "housing"],
-  [/\b(POWER|ENERGY|ELECTRIC|WATER|SEWER|UTILITY|UTILITIES|INTERNET|BROADBAND|WIRELESS)\b/, "bills"],
+// Wording that can only mean one thing, wherever it sits in the name.
+const STARTER_SURE = [
   // Card interest: "PURCHASE INTEREST CHARGE", "INTEREST CHARGE ON PURCHASES".
   [/\bINTEREST CHARGE\b/, "interest"],
   [/^(DRAFTKINGS|FANDUEL|BET365)$|\bLOTTERY\b/, "sportsbooks"], // lottery too (Rudy's call)
 ];
 
-export function starterCategory(key) {
-  for (const [re, cat] of STARTER) if (re.test(key)) return cat;
-  for (const [re, cat] of STARTER_WORDS) if (re.test(key)) return cat;
+// Words that usually give a bill away ("RENT PAYMENT PORTAL", "CITY POWER CO").
+// Only a guess: "WATER STREET TAVERN" and "POWER YOGA" have them too, so the
+// bank's own category can overrule these (see categorize).
+const STARTER_WORDS = [
+  [/\b(RENT(?![ -]A[ -]CAR)|APARTMENTS?|PROPERTY MGMT|PROPERTY MANAGEMENT|LEASING|RENTERS INS)\b/, "housing"],
+  [/\b(POWER|ENERGY|ELECTRIC|WATER|SEWER|UTILITY|UTILITIES|INTERNET|BROADBAND|WIRELESS)\b/, "bills"],
+];
+
+const firstMatch = (lists, key) => {
+  for (const list of lists) for (const [re, cat] of list) if (re.test(key)) return cat;
   return null;
+};
+const sureCategory = (key) => firstMatch([STARTER, STARTER_SURE], key);
+const wordCategory = (key) => firstMatch([STARTER_WORDS], key);
+
+// What the starter lists alone say (no bank category to weigh against).
+export function starterCategory(key) {
+  return sureCategory(key) ?? wordCategory(key);
 }
+
+// The bank's "Shopping" and "Bills" are catch-alls (Chase files rent under
+// Home), so a bill word still beats those. Its Dining, Travel, Health and the
+// rest are specific, and a bill is never one of them, so there the bank wins.
+const VAGUE = new Set(["shopping", "bills"]);
 
 // Chase ("Food & Drink") and Amex ("Restaurant-Bar & Café") name categories
 // differently. Order matters: Amex's "Merchandise & Supplies-Groceries" has to
@@ -393,8 +413,8 @@ export function issuerCategory(raw) {
 }
 
 // Which category a transaction lands in, and whether Rudy chose it himself.
-// Order: a fix on this one row, his rule for the merchant, the starter list,
-// the bank's own category, then Other.
+// Order: a fix on this one row, his rule for the merchant, the starter chains,
+// the bank's own category when it's a specific one, bill words, then Other.
 export function categorize(tx, key, db) {
   const valid = (id) => id && (id === NOT_SPENDING || db.categories.some((c) => c.id === id));
   // A fix on this one row always wins, whatever kind of row it is.
@@ -409,7 +429,10 @@ export function categorize(tx, key, db) {
   let cat, mine = false;
   if (valid(rule) && (!off || rule === NOT_SPENDING)) { cat = rule; mine = true; }
   else if (off) return { cat: NOT_SPENDING, mine: false };
-  else cat = starterCategory(key) ?? issuerCategory(tx.issuerCat) ?? "other";
+  else {
+    const bank = issuerCategory(tx.issuerCat);
+    cat = sureCategory(key) ?? (bank && !VAGUE.has(bank) ? bank : wordCategory(key) ?? bank) ?? "other";
+  }
   // Rudy's call: Sportsbooks counts deposits only. Winnings credited to a card
   // are money in, like winnings paid to checking, not a refund off the category.
   // Checked after his rules too, or re-saving a DraftKings rule would let winnings count.
@@ -448,8 +471,11 @@ export function median(values) {
   return s.length % 2 ? s[mid] : Math.round((s[mid - 1] + s[mid]) / 2);
 }
 
-// Each account's first and last date.
-export function accountRanges(txs) {
+// Each account's first and last date. "end" is how far its files reach: the
+// last row, or the day the newest file was downloaded when that's later
+// (covered: account → date). A card with no charge since the 24th still covers
+// the whole month if its file was downloaded on the 2nd of the next one.
+export function accountRanges(txs, covered = {}) {
   const r = {};
   for (const t of txs) {
     const a = (r[t.account] ??= { first: t.date, last: t.date, count: 0 });
@@ -457,6 +483,7 @@ export function accountRanges(txs) {
     if (t.date > a.last) a.last = t.date;
     a.count++;
   }
+  for (const [name, a] of Object.entries(r)) a.end = covered?.[name] > a.last ? covered[name] : a.last;
   return r;
 }
 
@@ -501,7 +528,7 @@ export function isFullMonth(month, ranges, start = null) {
   if (!accts.length) return false;
   const late = (a) => start && daysBetween(`${start}-01`, a.first) > 6;
   return accts.every((a) =>
-    (late(a) || daysBetween(a.first, `${month}-01`) >= -6) && daysBetween(lastDayOf(month), a.last) >= -3);
+    (late(a) || daysBetween(a.first, `${month}-01`) >= -6) && daysBetween(lastDayOf(month), a.end ?? a.last) >= -3);
 }
 
 // Where Where it went and Trends begin (v0.14). Rudy loads checking back years
@@ -532,7 +559,7 @@ export function buildStats(db) {
     rows.push({ tx, key, cat, mine, month: monthOf(tx.date) });
   }
   const spend = rows.filter((r) => r.cat !== NOT_SPENDING);
-  const ranges = accountRanges(db.txs);
+  const ranges = accountRanges(db.txs, db.covered);
   const byMonth = new Map(); // month → { total, cats: Map(cat → cents) }
   for (const r of spend) {
     const m = byMonth.get(r.month) ?? { total: 0, cats: new Map() };
